@@ -1,0 +1,266 @@
+//@version=6
+indicator("Indicator Collection", overlay=true)
+
+// === Bollinger Bands ===
+bb_title = 'Bollinger Bands'
+bb_group = bb_title
+bb_tool_tip   = 'Bolinger Bands visualize price volatility base from standard deviation helps to identify potential price reversals.\n\n' +
+          ' - Middle band: Representing the average price over a specified period(SMA).\n' +
+          ' - Upper band: May indicate overbought conditions\n' +
+          ' - Lower band: May indicate oversold conditions'
+
+bb_show = input.bool(true, title = bb_title, tooltip = bb_tool_tip, group = bb_group)
+bb_length = input.int(20, title="  BB Length", group = bb_group)
+bb_mult = input.float(2.0, title="  BB Multiplier", group = bb_group)
+
+var float bb_upper = na
+var float bb_lower = na
+var float bb_basis = na
+
+if bb_show
+    bb_basis := ta.sma(close, bb_length)
+    bb_dev = bb_mult * ta.stdev(close, bb_length)
+    bb_upper := bb_basis + bb_dev
+    bb_lower := bb_basis - bb_dev
+
+
+plot(bb_upper, title="BB Upper", color=color.rgb(255, 255, 255), linewidth=1)
+plot(bb_lower, title="BB Lower", color=color.rgb(255, 255, 255), linewidth=1)
+plot(bb_basis, title="BB Basis", color=color.rgb(0, 0, 0), linewidth=1)
+
+// === EMA ===
+ema_title = 'Exponential Movement Average'
+ema_group = ema_title
+ema_tool_tip   = 'EMA visualize smooth price data to identify trend direction and potential support/resistance levels. It gives more weight to recent prices, making it more responsive to price changes.\n\n' +
+          ' - Configure lengths for multiple EMAs to analyze short-term, medium-term, and long-term trends.'
+
+ema_show = input.bool(false, title = ema_title, tooltip = ema_tool_tip, group = ema_group)
+ema_custom_len  = input.int(200, title="  EMA Custom", group = ema_group)
+ema_short_len  = input.int(20, title="  EMA Short", group = ema_group)
+ema_mid_len  = input.int(50, title="  EMA Mid", group = ema_group)
+ema_long_len = input.int(100, title="  EMA Long", group = ema_group)
+
+var float ema_custom = na
+var float ema_short = na
+var float ema_mid = na
+var float ema_long = na
+
+if ema_show
+    ema_custom  := ta.ema(close, ema_custom_len)
+    ema_short  := ta.ema(close, ema_short_len)
+    ema_mid  := ta.ema(close, ema_mid_len)
+    ema_long  := ta.ema(close, ema_long_len)
+
+plot(ema_custom, title="EMA Custom", color=color.rgb(255, 187, 0), linewidth=2)
+plot(ema_short, title="EMA Short", color=color.rgb(51, 255, 0), linewidth=2)
+plot(ema_mid, title="EMA Mid", color=color.rgb(255, 251, 0), linewidth=2)
+plot(ema_long, title="EMA Long", color=color.rgb(173, 11, 11), linewidth=2)
+
+// Entry Confirmation Indicator
+ec_title = 'Entry Confirmation Indicator'
+ec_group = ec_title
+ec_tool_tip   = 'Entry Confirmation Indicator serves as an entry confirmation and helps validate potential trade setups based on recent price action and volatility.\n\n' +
+          ' - Sensitivity: how responsive the confirmation signal is to price movement and trend behavior. Higher sensitivity captures quicker shifts; lower sensitivity filters out noise.' +
+          ' - ATR Period: Sets the length for the Average True Range (ATR) calculation, which gauges market volatility and adjusts the confirmation logic accordingly.'
+
+ec_show = input.bool(true, title = ec_title, tooltip = ec_tool_tip, group = ec_group)
+ec_sensitivity = input.float(5, title="Sensitivity", group = ec_group)
+ec_atr = input.int(10, title="ATR Period", group = ec_group)
+ec_heikin_ashi = input.bool(false, title="Use Heikin Ashi Candles", group = ec_group)
+
+var bool ec_buy_signal = false
+var bool ec_sell_signal = false
+var bool ec_buy_bar = false
+var bool ec_sell_bar = false
+
+if ec_show
+    atr = ta.atr(ec_atr)
+    n_loss = ec_sensitivity * atr
+
+    price = ec_heikin_ashi ? request.security(ticker.heikinashi(syminfo.tickerid), timeframe.period, close, barmerge.gaps_off) : close
+
+    atr_trailing_stop = 0.0
+    atr_trailing_stop := if price > nz(atr_trailing_stop[1], 0) and price[1] > nz(atr_trailing_stop[1], 0)
+        math.max(nz(atr_trailing_stop[1]), price - n_loss)
+    else if price < nz(atr_trailing_stop[1], 0) and price[1] < nz(atr_trailing_stop[1], 0)
+        math.min(nz(atr_trailing_stop[1]), price + n_loss)
+    else if price > nz(atr_trailing_stop[1], 0)
+        price - n_loss
+    else
+        price + n_loss
+
+    pos = 0
+    pos := if price[1] < nz(atr_trailing_stop[1], 0) and price > nz(atr_trailing_stop[1], 0)
+        1
+    else if price[1] > nz(atr_trailing_stop[1], 0) and price < nz(atr_trailing_stop[1], 0)
+        -1
+    else
+        nz(pos[1], 0)
+
+    plot_color = pos == -1 ? color.red : pos == 1 ? color.green : color.blue
+
+    ema_value = ta.ema(price, 1)
+    above = ta.crossover(ema_value, atr_trailing_stop)
+    below = ta.crossover(atr_trailing_stop, ema_value)
+
+    ec_buy_signal := price > atr_trailing_stop and above
+    ec_sell_signal := price < atr_trailing_stop and below
+
+    ec_buy_bar := price > atr_trailing_stop
+    ec_sell_bar := price < atr_trailing_stop
+
+plotshape(ec_buy_signal, title="buy", text="buy", style=shape.labelup, location=location.belowbar, color=color.green, textcolor=color.white, size=size.tiny)
+plotshape(ec_sell_signal, title="sell", text="sell", style=shape.labeldown, location=location.abovebar, color=color.red, textcolor=color.white, size=size.tiny)
+
+barcolor(ec_buy_bar ? color.green : na)
+barcolor(ec_sell_bar ? color.red : na)
+
+alertcondition(ec_buy_signal, "ut_long", "ut_long")
+alertcondition(ec_sell_signal, "ut_short", "ut_short")
+
+// Market Decision Indicator
+md_title = 'Market Decision Indicator'
+md_group = md_title
+md_tool_tip   = 'Market Decision Indicator visualizes market decision and indecision zones based on trend dynamics.\n\n' +
+          ' - Gray zones: Represent periods of market indecision or consolidation, where trend direction is unclear or momentum is weak.\n' +
+          ' - Green zones: Indicate bullish market conditions, suggesting upward momentum or trend continuation\n' +
+          ' - Red zones: Indicate bearish market conditions, suggesting downward momentum or trend continuation\n'
+
+md_show = input.bool(true, title = md_title, tooltip = md_tool_tip, group = md_group)
+md_lookback = input.int(5, title="  Lookback", group = md_group)
+md_ema = input.int(100, title="  EMA", group = md_group)
+md_lookback_hl = input.int(2, title="  Lookback HL", group = md_group)
+
+var float md_ema_high = na
+var float md_ema_low = na
+var bool md_ma_cd_long = false
+var bool md_ma_cd_short = false
+if md_show
+    md_ema_high := ta.ema(ta.highest(high, md_lookback_hl), md_ema)
+    md_ema_low := ta.ema(ta.lowest(low, md_lookback_hl), md_ema)
+    
+    md_fast_ma = ta.ema(close, 12)
+    md_slow_ma = ta.ema(close, 26)
+
+    md_ma_cd = md_fast_ma - md_slow_ma
+    md_signal = ta.sma(md_ma_cd, 9)
+    md_ma_cd_long := ta.crossover(md_ma_cd, md_signal) and close > md_ema_high and md_ema_high > md_ema_high[md_lookback] and md_ema_low > md_ema_low[md_lookback]
+    md_ma_cd_short := ta.crossunder(md_ma_cd, md_signal) and close < md_ema_low and md_ema_low < md_ema_low[md_lookback] and md_ema_high < md_ema_high[md_lookback]
+
+md_high = plot(md_ema_high, color=md_ema_high > md_ema_high[md_lookback] ? color.green : color.red, linewidth=2)
+md_low = plot(md_ema_low, color=md_ema_low < md_ema_low[md_lookback] ? color.red : color.green, linewidth=2)
+
+fill(md_high, md_low, color=close > md_ema_high and md_ema_high > md_ema_high[md_lookback] and md_ema_low > md_ema_low[md_lookback] ? color.new(color.green, 70) :
+     close < md_ema_low and md_ema_low < md_ema_low[md_lookback] and md_ema_high < md_ema_high[md_lookback] ? color.new(color.red, 70) : color.new(color.black, 70))
+
+plot(md_ma_cd_long or md_ma_cd_short ? close : na, style=plot.style_circles, color=md_ma_cd_long ? color.yellow : color.red, linewidth=4, display=display.none, title="macd")
+// === Volume Profile ===
+vp_title = 'Volume Profile'
+vp_group = vp_title
+vp_tool_tip   = 'Volume Profile displays total trading activity (both buying and selling trading activity) over a specified time period at specific price levels:\n\n' +
+          ' - Row lengths indicate the amount of traded activity at specific price levels\n' +
+          ' - High traded zones usually represent consolidation zones (value areas)\n' +
+          ' - Low traded zones usually represent supply & demand or liquidity zones'
+
+vp_show = input.bool(false, title=vp_title, tooltip=vp_tool_tip, group=vp_group)
+vp_bbars = input.int(title='  Number of Bars', defval=150, minval=1, maxval=500, group=vp_group)
+vp_cnum = input.int(title='  Row size', defval=24, minval=5, maxval=100, group=vp_group)
+vp_percent = input.float(70., title='  Value Area Volume Percent', minval=0, maxval=100, group=vp_group)
+vp_poc_show = input.bool(true, title='  POC', inline='poc', group=vp_group)
+vp_poc_color = input.color(defval=#ff0000, title='  Color', inline='poc', group=vp_group)
+vp_poc_width = input.int(defval=2, title='  Width', minval=1, maxval=5, inline='poc', group=vp_group)
+vp_vup_color = input.color(defval=color.new(color.blue, 30), title='  Value Area Up', group=vp_group)
+vp_vdown_color = input.color(defval=color.new(color.orange, 30), title='  Value Area Down', group=vp_group)
+vp_up_color = input.color(defval=color.new(color.blue, 75), title='  Up Volume', group=vp_group)
+vp_down_color = input.color(defval=color.new(color.orange, 75), title='  Down Volume', group=vp_group)
+
+vp_get_vol(y11, y12, y21, y22, height, vol) => nz(math.max(math.min(math.max(y11, y12), math.max(y21, y22)) - math.max(math.min(y11, y12), math.min(y21, y22)), 0) * vol / height)
+
+if vp_show 
+    vp_top = ta.highest(vp_bbars)
+    vp_bot = ta.lowest(vp_bbars)
+    vp_dist = (vp_top - vp_bot) / 500
+    vp_step = (vp_top - vp_bot) / vp_cnum
+
+    vp_levels = array.new_float(vp_cnum + 1)
+    for x = 0 to vp_cnum by 1
+        array.set(vp_levels, x, vp_bot + vp_step * x)
+
+    if barstate.islast
+        vp_volumes = array.new_float(vp_cnum * 2, 0.)
+        for bars = 0 to vp_bbars - 1 by 1
+            body_top = math.max(close[bars], open[bars])
+            body_bot = math.min(close[bars], open[bars])
+            its_green = close[bars] >= open[bars]
+
+            top_wick = high[bars] - body_top
+            bottom_wick = body_bot - low[bars]
+            body = body_top - body_bot
+
+            body_vol = body * volume[bars] / (2 * top_wick + 2 * bottom_wick + body)
+            top_wick_vol = 2 * top_wick * volume[bars] / (2 * top_wick + 2 * bottom_wick + body)
+            bottom_wick_vol = 2 * bottom_wick * volume[bars] / (2 * top_wick + 2 * bottom_wick + body)
+            for x = 0 to vp_cnum - 1 by 1
+                array.set(vp_volumes, x, array.get(vp_volumes, x) + (its_green ? vp_get_vol(array.get(vp_levels, x), array.get(vp_levels, x + 1), body_bot, body_top, body, body_vol) : 0) + vp_get_vol(array.get(vp_levels, x), array.get(vp_levels, x + 1), body_top, high[bars], top_wick, top_wick_vol) / 2 + vp_get_vol(array.get(vp_levels, x), array.get(vp_levels, x + 1), body_bot, low[bars], bottom_wick, bottom_wick_vol) / 2)
+                array.set(vp_volumes, x + vp_cnum, array.get(vp_volumes, x + vp_cnum) + (its_green ? 0 : vp_get_vol(array.get(vp_levels, x), array.get(vp_levels, x + 1), body_bot, body_top, body, body_vol)) + vp_get_vol(array.get(vp_levels, x), array.get(vp_levels, x + 1), body_top, high[bars], top_wick, top_wick_vol) / 2 + vp_get_vol(array.get(vp_levels, x), array.get(vp_levels, x + 1), body_bot, low[bars], bottom_wick, bottom_wick_vol) / 2)
+
+        vp_total_vols = array.new_float(vp_cnum, 0.)
+        for x = 0 to vp_cnum - 1 by 1
+            array.set(vp_total_vols, x, array.get(vp_volumes, x) + array.get(vp_volumes, x + vp_cnum))
+
+        vp_poc = array.indexof(vp_total_vols, array.max(vp_total_vols))
+
+        vp_total_max = array.sum(vp_total_vols) * vp_percent / 100.
+        vp_va_total = array.get(vp_total_vols, vp_poc)
+        vp_up = vp_poc
+        vp_down = vp_poc
+        for x = 0 to vp_cnum - 1 by 1
+            if vp_va_total >= vp_total_max
+                break
+            vp_upper_vol = vp_up < vp_cnum - 1 ? array.get(vp_total_vols, vp_up + 1) : 0.
+            vp_lower_vol = vp_down > 0 ? array.get(vp_total_vols, vp_down - 1) : 0.
+            if vp_upper_vol == 0 and vp_lower_vol == 0
+                break
+            if vp_upper_vol >= vp_lower_vol
+                vp_va_total += vp_upper_vol
+                vp_up += 1
+            else
+                vp_va_total += vp_lower_vol
+                vp_down -= 1
+
+        vp_max_vol = array.max(vp_total_vols)
+        for x = 0 to vp_cnum * 2 - 1 by 1
+            array.set(vp_volumes, x, array.get(vp_volumes, x) * vp_bbars / (3 * vp_max_vol))
+
+        vp_vol_bars = array.new_box(vp_cnum * 2, na)
+        for x = 0 to vp_cnum - 1 by 1
+            box.delete(array.get(vp_vol_bars, x))
+            box.delete(array.get(vp_vol_bars, x + vp_cnum))
+            array.set(vp_vol_bars, x, box.new(bar_index - vp_bbars + 1, array.get(vp_levels, x + 1) - vp_dist,  bar_index - vp_bbars + 1 + math.round(array.get(vp_volumes, x)), array.get(vp_levels, x) + vp_dist, border_width=0, bgcolor=x >= vp_down and x <= vp_up ? vp_vup_color : vp_up_color))
+            array.set(vp_vol_bars, x + vp_cnum, box.new(bar_index - vp_bbars + 1 + math.round(array.get(vp_volumes, x)),  array.get(vp_levels, x + 1) - vp_dist, bar_index - vp_bbars + 1 + math.round(array.get(vp_volumes, x)) + math.round(array.get(vp_volumes, x + vp_cnum)), array.get(vp_levels, x) + vp_dist, border_width=0, bgcolor=x >= vp_down and x <= vp_up ? vp_vdown_color : vp_down_color))
+
+        vp_poc_level = (array.get(vp_levels, vp_poc) + array.get(vp_levels, vp_poc + 1)) / 2
+        var line vp_poc_line = na
+        if vp_poc_show
+            line.delete(vp_poc_line)
+            vp_poc_line := line.new(bar_index - vp_bbars + 1, vp_poc_level, bar_index - vp_bbars + 2, vp_poc_level, extend=extend.right, color=vp_poc_color, width=vp_poc_width)
+
+// === Williams Fractal ===
+wf_title = 'Williams Fractal'
+wf_group = wf_title
+wf_tool_tip   = 'Displays Williams Fractals, which identify potential turning points in the market:\n\n' +
+          ' - A bullish fractal forms when the lowest low is surrounded by two higher lows on each side\n' +
+          ' - A bearish fractal forms when the highest high is surrounded by two lower highs on each side\n\n' +
+          'These fractals can be used to identify support and resistance levels or trend reversals.'
+
+wf_show = input.bool(false, title = wf_title, tooltip = wf_tool_tip, group = wf_group)
+
+var bool wf_bullish = false
+var bool wf_bearish = false
+
+if wf_show
+    wf_bullish := high[2] > high[3] and high[2] > high[4] and high[2] > high[1] and high[2] > high[0]
+    wf_bearish := low[2] < low[3] and low[2] < low[4] and low[2] < low[1] and low[2] < low[0]
+
+plotshape(wf_bullish, title="Up Fractal", location=location.abovebar, style=shape.triangledown, color=color.red, size=size.tiny, offset=-2)
+plotshape(wf_bearish, title="Down Fractal", location=location.belowbar, style=shape.triangleup, color=color.green, size=size.tiny, offset=-2)

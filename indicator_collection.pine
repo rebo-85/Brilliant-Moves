@@ -1,17 +1,34 @@
 //@version=6
 indicator("Indicator Collection", overlay=true)
 
-// === Bollinger Bands ===
-bb_title = 'Bollinger Bands'
-bb_group = bb_title
-bb_tool_tip   = 'Bolinger Bands visualize price volatility base from standard deviation helps to identify potential price reversals.\n\n' +
-          ' - Middle band: Representing the average price over a specified period(SMA).\n' +
-          ' - Upper band: May indicate overbought conditions\n' +
-          ' - Lower band: May indicate oversold conditions'
+// General
+get_size(size) =>
+    switch size
+        'Auto'   => size.auto
+        'Tiny'   => size.tiny
+        'Small'  => size.small
+        'Normal' => size.normal
+        'Large' => size.large
+        'Huge' => size.huge
 
-bb_show = input.bool(true, title = bb_title, tooltip = bb_tool_tip, group = bb_group)
-bb_length = input.int(20, title="  BB Length", group = bb_group)
-bb_mult = input.float(2.0, title="  BB Multiplier", group = bb_group)
+get_position(position) =>
+    switch position
+        'Bottom Center'   => position.bottom_center
+        'Bottom Left'   => position.bottom_left
+        'Bottom Right'  => position.bottom_right
+        'Middle Center' => position.middle_center
+        'Middle Left' => position.middle_left
+        'Middle Right' => position.middle_right
+        'Top Center' => position.top_center
+        'Top Left' => position.top_left
+        'Top Right' => position.top_right
+
+// === Bollinger Bands ===
+bb_group = 'Bollinger Bands'
+
+bb_show = input.bool(true, title = 'Enable', group = bb_group, display = display.none)
+bb_length = input.int(20, title="Length", group = bb_group, display = display.none)
+bb_mult = input.float(2.0, title="Multiplier", group = bb_group, display = display.none)
 
 var float bb_upper = na
 var float bb_lower = na
@@ -24,21 +41,130 @@ if bb_show
     bb_lower := bb_basis - bb_dev
 
 
-plot(bb_upper, title="BB Upper", color=color.rgb(255, 255, 255), linewidth=1)
-plot(bb_lower, title="BB Lower", color=color.rgb(255, 255, 255), linewidth=1)
-plot(bb_basis, title="BB Basis", color=color.rgb(0, 0, 0), linewidth=1)
+plot(bb_upper, title="BB Upper", color=color.rgb(255, 255, 255), linewidth=1, display = display.pane)
+plot(bb_lower, title="BB Lower", color=color.rgb(255, 255, 255), linewidth=1, display = display.pane)
+plot(bb_basis, title="BB Basis", color=color.rgb(0, 0, 0), linewidth=1, display = display.pane)
+// === Dashboard ===
+db_group = 'Dashboard'
+
+db_show = input.bool(true, 'Enable', group = db_group)
+
+db_location = input.string("Top Right","Dashboard Location", ["Top Right", "Bottom Right", "Bottom Left", "Middle Left"],group = db_group, display = display.none)
+db_size = input.string("Small","Dashboard Size       ", ["Tiny","Small","Normal","Large"],group = db_group, display = display.none)
+
+
+db_atr = 3 * ta.atr(10)
+db_std_atr = 2 * ta.stdev(db_atr, 20)
+db_sma_atr = ta.sma(db_atr, 20)
+
+db_rsi_length = 14
+db_rsi_source = close
+db_rsi = ta.rsi(db_rsi_source, db_rsi_length)
+
+
+db_di_length = 14
+db_adx_smoothing = 14
+[db_di_plus, db_di_minus, db_adx] = ta.dmi(db_di_length, db_adx_smoothing)
+
+db_median_adx = ta.sma(db_adx, 14)
+db_bullish_threshold_multiplier = 1.2
+db_bearish_threshold_multiplier = 0.8
+
+db_table = table.new(get_position(db_location), 18, 10 , bgcolor = #11172565 , border_color = #373a4600 , border_width = 1 , frame_color = #000000 , frame_width = 1)
+
+no_repaint_security(sym, res, src) =>
+    chart_tf_in_minutes = timeframe.multiplier * ( timeframe.isseconds ? 1. / 60 : timeframe.isminutes ? 1. : timeframe.isdaily ? 60. * 24 : timeframe.isweekly ? 60. * 24 * 7 : timeframe.ismonthly ? 60. * 24 * 30.4375 : na)
+    is_equal_tf = str.tonumber(res) == chart_tf_in_minutes
+    is_higher_tf = str.tonumber(res) > chart_tf_in_minutes
+    is_too_small_tf = (timeframe.isweekly and res == "1") or (timeframe.ismonthly and str.tonumber(res) < 10)
+    float result = na
+    result := is_equal_tf ? src : result
+    result := is_higher_tf ? request.security(sym, res, src, barmerge.gaps_off, barmerge.lookahead_on) : result
+    arr = request.security_lower_tf(syminfo.tickerid, is_higher_tf ? str.tostring(chart_tf_in_minutes) : is_too_small_tf ? (timeframe.isweekly ? "3" : "10") : res, src)
+    if array.size(arr) > 1 and not is_equal_tf and not is_higher_tf
+        result := array.pop(arr)
+    array.clear(arr)
+    result
+
+if db_show
+    if barstate.islast
+
+        db_table_size = get_size(db_size)
+
+        top_atr_dev = db_sma_atr + db_std_atr
+        bottom_atr_dev = db_sma_atr - db_std_atr
+        dev = (db_atr - bottom_atr_dev) / (top_atr_dev - bottom_atr_dev)
+
+        volatility = 40 * dev + 30
+        volume_status = volatility < 35 ? "Very Low" :volatility < 50 ? "Low" :volatility < 70 ? "High" :"Very High"
+
+        trend_treshold = 50
+
+        rsi_color = db_rsi > trend_treshold ? color.green : color.red
+
+        
+        bullish_threshold = db_median_adx * db_bullish_threshold_multiplier
+        bearish_threshold = db_median_adx * db_bearish_threshold_multiplier
+        bullish = db_adx > bullish_threshold
+        bearish = db_adx < bearish_threshold
+        adx_trend = bullish ? 1 : bearish ? -1 : 0
+
+        tf_m1   = no_repaint_security(syminfo.tickerid, "1"   , adx_trend)
+        tf_m3   = no_repaint_security(syminfo.tickerid, "3"   , adx_trend)
+        tf_m5   = no_repaint_security(syminfo.tickerid, "5"   , adx_trend)
+        tf_m15  = no_repaint_security(syminfo.tickerid, "15"  , adx_trend)
+        tf_m30  = no_repaint_security(syminfo.tickerid, "30"  , adx_trend)
+        tf_h1   = no_repaint_security(syminfo.tickerid, "60"  , adx_trend)
+        tf_h2   = no_repaint_security(syminfo.tickerid, "120" , adx_trend)
+        tf_h4   = no_repaint_security(syminfo.tickerid, "240" , adx_trend)
+        tf_h12  = no_repaint_security(syminfo.tickerid, "720" , adx_trend)
+        tf_d1   = no_repaint_security(syminfo.tickerid, "1440", adx_trend)
+
+        table.cell(db_table, 0, 0, '  Dashboard                                ', text_color = color.white,text_halign = text.align_left, text_size = db_table_size,bgcolor = #18233a)
+        table.merge_cells(db_table, 0, 0, 3, 0)
+        db_table.cell(0, 2, "⚠️ Volatility", text_color = color.white, text_size = db_table_size, text_halign = text.align_center)
+        db_table.cell(1, 2, volume_status, text_color = color.white, text_size = db_table_size, text_halign = text.align_center)
+        db_table.cell(2, 2, "📈 RSI", text_color = color.white, text_size = db_table_size, text_halign = text.align_center)
+        db_table.cell(3, 2, str.tostring(db_rsi,"#.##"), text_color = rsi_color, text_size = db_table_size, text_halign = text.align_center)
+        
+        db_table.cell(0, 3, "Timeframe", text_color = #b0b2b9, text_size = db_table_size, text_halign = text.align_center)
+        db_table.cell(1, 3, "Trend", text_color = #b0b2b9, text_size = db_table_size, text_halign = text.align_center)
+        db_table.cell(2, 3, "Timeframe", text_color = #b0b2b9, text_size = db_table_size, text_halign = text.align_center)
+        db_table.cell(3, 3, "Trend", text_color = #b0b2b9, text_size = db_table_size, text_halign = text.align_center)
+        
+        db_table.cell(0, 4, "1 Minute", text_color = color.white, text_size = db_table_size, text_halign = text.align_center)
+        db_table.cell(1, 4, tf_m1 != 0 ? "Bullish" : "Bearish", text_color = tf_m1 != 0 ? color.green : color.red, text_size = db_table_size, text_halign = text.align_center)
+        db_table.cell(2, 4, "1 Hour", text_color = color.white, text_size = db_table_size, text_halign = text.align_center)
+        db_table.cell(3, 4, tf_h1 != 0 ? "Bullish" : "Bearish", text_color = tf_h1 != 0 ? color.green : color.red, text_size = db_table_size, text_halign = text.align_center)
+        
+        db_table.cell(0, 5, "3 Minute", text_color = color.white, text_size = db_table_size, text_halign = text.align_center)
+        db_table.cell(1, 5, tf_m3 != 0 ? "Bullish" : "Bearish", text_color = tf_m3 != 0 ? color.green : color.red, text_size = db_table_size, text_halign = text.align_center)
+        db_table.cell(2, 5, "2 Hour", text_color = color.white, text_size = db_table_size, text_halign = text.align_center)
+        db_table.cell(3, 5, tf_h2 != 0 ? "Bullish" : "Bearish", text_color = tf_h2 != 0 ? color.green : color.red, text_size = db_table_size, text_halign = text.align_center)
+        
+        db_table.cell(0, 6, "5 Minute", text_color = color.white, text_size = db_table_size, text_halign = text.align_center)
+        db_table.cell(1, 6, tf_m5 != 0 ? "Bullish" : "Bearish", text_color = tf_m5 != 0 ? color.green : color.red, text_size = db_table_size, text_halign = text.align_center)
+        db_table.cell(2, 6, "4 Hour", text_color = color.white, text_size = db_table_size, text_halign = text.align_center)
+        db_table.cell(3, 6, tf_h4 != 0 ? "Bullish" : "Bearish", text_color = tf_h4 != 0 ? color.green : color.red, text_size = db_table_size, text_halign = text.align_center)
+        
+        db_table.cell(0, 7, "15 Minute", text_color = color.white, text_size = db_table_size, text_halign = text.align_center)
+        db_table.cell(1, 7, tf_m15 != 0 ? "Bullish" : "Bearish", text_color = tf_m15 != 0 ? color.green : color.red, text_size = db_table_size, text_halign = text.align_center)
+        db_table.cell(2, 7, "12 Hour", text_color = color.white, text_size = db_table_size, text_halign = text.align_center)
+        db_table.cell(3, 7, tf_h12 != 0 ? "Bullish" : "Bearish", text_color = tf_h12 != 0 ? color.green : color.red, text_size = db_table_size, text_halign = text.align_center)
+
+        db_table.cell(0, 8, "30 Minute", text_color = color.white, text_size = db_table_size, text_halign = text.align_center)
+        db_table.cell(1, 8, tf_m30 != 0 ? "Bullish" : "Bearish", text_color = tf_m30 != 0 ? color.green : color.red, text_size = db_table_size, text_halign = text.align_center)
+        db_table.cell(2, 8, "Daily", text_color = color.white, text_size = db_table_size, text_halign = text.align_center)
+        db_table.cell(3, 8, tf_d1 != 0 ? "Bullish" : "Bearish", text_color = tf_d1 != 0 ? color.green : color.red, text_size = db_table_size, text_halign = text.align_center)
 
 // === EMA ===
-ema_title = 'Exponential Movement Average'
-ema_group = ema_title
-ema_tool_tip   = 'EMA visualize smooth price data to identify trend direction and potential support/resistance levels. It gives more weight to recent prices, making it more responsive to price changes.\n\n' +
-          ' - Configure lengths for multiple EMAs to analyze short-term, medium-term, and long-term trends.'
+ema_group = 'Exponential Movement Average'
 
-ema_show = input.bool(false, title = ema_title, tooltip = ema_tool_tip, group = ema_group)
-ema_custom_len  = input.int(200, title="  EMA Custom", group = ema_group)
-ema_short_len  = input.int(20, title="  EMA Short", group = ema_group)
-ema_mid_len  = input.int(50, title="  EMA Mid", group = ema_group)
-ema_long_len = input.int(100, title="  EMA Long", group = ema_group)
+ema_show = input.bool(false, title = 'Enable', group = ema_group)
+ema_custom_len  = input.int(200, title="Custom", group = ema_group, display = display.none)
+ema_short_len  = input.int(20, title="Short", group = ema_group, display = display.none)
+ema_mid_len  = input.int(50, title="Mid", group = ema_group, display = display.none)
+ema_long_len = input.int(100, title="Long", group = ema_group, display = display.none)
 
 var float ema_custom = na
 var float ema_short = na
@@ -51,21 +177,16 @@ if ema_show
     ema_mid  := ta.ema(close, ema_mid_len)
     ema_long  := ta.ema(close, ema_long_len)
 
-plot(ema_custom, title="EMA Custom", color=color.rgb(255, 187, 0), linewidth=2)
-plot(ema_short, title="EMA Short", color=color.rgb(51, 255, 0), linewidth=2)
-plot(ema_mid, title="EMA Mid", color=color.rgb(255, 251, 0), linewidth=2)
-plot(ema_long, title="EMA Long", color=color.rgb(173, 11, 11), linewidth=2)
+plot(ema_custom, title="EMA Custom", color=color.rgb(255, 187, 0), linewidth=2, display = display.pane)
+plot(ema_short, title="EMA Short", color=color.rgb(51, 255, 0), linewidth=2, display = display.pane)
+plot(ema_mid, title="EMA Mid", color=color.rgb(255, 251, 0), linewidth=2, display = display.pane)
+plot(ema_long, title="EMA Long", color=color.rgb(173, 11, 11), linewidth=2, display = display.pane)
 
 // Entry Confirmation Indicator
-ec_title = 'Entry Confirmation Indicator'
-ec_group = ec_title
-ec_tool_tip   = 'Entry Confirmation Indicator serves as an entry confirmation and helps validate potential trade setups based on recent price action and volatility.\n\n' +
-          ' - Sensitivity: how responsive the confirmation signal is to price movement and trend behavior. Higher sensitivity captures quicker shifts; lower sensitivity filters out noise.' +
-          ' - ATR Period: Sets the length for the Average True Range (ATR) calculation, which gauges market volatility and adjusts the confirmation logic accordingly.'
-
-ec_show = input.bool(true, title = ec_title, tooltip = ec_tool_tip, group = ec_group)
-ec_sensitivity = input.float(5, title="Sensitivity", group = ec_group)
-ec_atr = input.int(10, title="ATR Period", group = ec_group)
+ec_group = 'Entry Confirmation Indicator'
+ec_show = input.bool(false, title = 'Enable', group = ec_group)
+ec_sensitivity = input.float(2.75, title="Sensitivity", group = ec_group, display = display.none)
+ec_atr = input.int(10, title="ATR Period", group = ec_group, display = display.none)
 ec_heikin_ashi = input.bool(false, title="Use Heikin Ashi Candles", group = ec_group)
 
 var bool ec_buy_signal = false
@@ -99,9 +220,9 @@ if ec_show
 
     plot_color = pos == -1 ? color.red : pos == 1 ? color.green : color.blue
 
-    ema_value = ta.ema(price, 1)
-    above = ta.crossover(ema_value, atr_trailing_stop)
-    below = ta.crossover(atr_trailing_stop, ema_value)
+    ema = ta.ema(price, 1)
+    above = ta.crossover(ema, atr_trailing_stop)
+    below = ta.crossover(atr_trailing_stop, ema)
 
     ec_buy_signal := price > atr_trailing_stop and above
     ec_sell_signal := price < atr_trailing_stop and below
@@ -109,27 +230,23 @@ if ec_show
     ec_buy_bar := price > atr_trailing_stop
     ec_sell_bar := price < atr_trailing_stop
 
-plotshape(ec_buy_signal, title="buy", text="buy", style=shape.labelup, location=location.belowbar, color=color.green, textcolor=color.white, size=size.tiny)
-plotshape(ec_sell_signal, title="sell", text="sell", style=shape.labeldown, location=location.abovebar, color=color.red, textcolor=color.white, size=size.tiny)
+
+plotshape(ec_buy_signal, title="buy", text="buy", style=shape.labelup, location=location.belowbar, color=color.green, textcolor=color.white, size=size.tiny, display = display.pane)
+plotshape(ec_sell_signal, title="sell", text="sell", style=shape.labeldown, location=location.abovebar, color=color.red, textcolor=color.white, size=size.tiny, display = display.pane)
 
 barcolor(ec_buy_bar ? color.green : na)
 barcolor(ec_sell_bar ? color.red : na)
 
-alertcondition(ec_buy_signal, "ut_long", "ut_long")
-alertcondition(ec_sell_signal, "ut_short", "ut_short")
+alertcondition(ec_buy_signal, "BUY", "BUY")
+alertcondition(ec_sell_signal, "SELL", "SELL")
+
 
 // Market Decision Indicator
-md_title = 'Market Decision Indicator'
-md_group = md_title
-md_tool_tip   = 'Market Decision Indicator visualizes market decision and indecision zones based on trend dynamics.\n\n' +
-          ' - Gray zones: Represent periods of market indecision or consolidation, where trend direction is unclear or momentum is weak.\n' +
-          ' - Green zones: Indicate bullish market conditions, suggesting upward momentum or trend continuation\n' +
-          ' - Red zones: Indicate bearish market conditions, suggesting downward momentum or trend continuation\n'
-
-md_show = input.bool(true, title = md_title, tooltip = md_tool_tip, group = md_group)
-md_lookback = input.int(5, title="  Lookback", group = md_group)
-md_ema = input.int(100, title="  EMA", group = md_group)
-md_lookback_hl = input.int(2, title="  Lookback HL", group = md_group)
+md_group = 'Market Decision Indicator'
+md_show = input.bool(false, title = "Enable", group = md_group)
+md_lookback = input.int(5, title="Lookback", group = md_group, display = display.none)
+md_ema = input.int(100, title="EMA", group = md_group, display = display.none)
+md_lookback_hl = input.int(2, title="Lookback HL", group = md_group, display = display.none)
 
 var float md_ema_high = na
 var float md_ema_low = na
@@ -139,56 +256,235 @@ if md_show
     md_ema_high := ta.ema(ta.highest(high, md_lookback_hl), md_ema)
     md_ema_low := ta.ema(ta.lowest(low, md_lookback_hl), md_ema)
     
-    md_fast_ma = ta.ema(close, 12)
-    md_slow_ma = ta.ema(close, 26)
+    fast_ma = ta.ema(close, 12)
+    slow_ma = ta.ema(close, 26)
 
-    md_ma_cd = md_fast_ma - md_slow_ma
-    md_signal = ta.sma(md_ma_cd, 9)
-    md_ma_cd_long := ta.crossover(md_ma_cd, md_signal) and close > md_ema_high and md_ema_high > md_ema_high[md_lookback] and md_ema_low > md_ema_low[md_lookback]
-    md_ma_cd_short := ta.crossunder(md_ma_cd, md_signal) and close < md_ema_low and md_ema_low < md_ema_low[md_lookback] and md_ema_high < md_ema_high[md_lookback]
+    ma_diff = fast_ma - slow_ma
+    md_signal = ta.sma(ma_diff, 9)
+    md_ma_cd_long := ta.crossover(ma_diff, md_signal) and close > md_ema_high and md_ema_high > md_ema_high[md_lookback] and md_ema_low > md_ema_low[md_lookback]
+    md_ma_cd_short := ta.crossunder(ma_diff, md_signal) and close < md_ema_low and md_ema_low < md_ema_low[md_lookback] and md_ema_high < md_ema_high[md_lookback]
 
-md_high = plot(md_ema_high, color=md_ema_high > md_ema_high[md_lookback] ? color.green : color.red, linewidth=2)
-md_low = plot(md_ema_low, color=md_ema_low < md_ema_low[md_lookback] ? color.red : color.green, linewidth=2)
+md_high = plot(md_ema_high, color=md_ema_high > md_ema_high[md_lookback] ? color.green : color.red, linewidth=2, display = display.pane)
+md_low = plot(md_ema_low, color=md_ema_low < md_ema_low[md_lookback] ? color.red : color.green, linewidth=2, display = display.pane)
 
 fill(md_high, md_low, color=close > md_ema_high and md_ema_high > md_ema_high[md_lookback] and md_ema_low > md_ema_low[md_lookback] ? color.new(color.green, 70) :
      close < md_ema_low and md_ema_low < md_ema_low[md_lookback] and md_ema_high < md_ema_high[md_lookback] ? color.new(color.red, 70) : color.new(color.black, 70))
 
 plot(md_ma_cd_long or md_ma_cd_short ? close : na, style=plot.style_circles, color=md_ma_cd_long ? color.yellow : color.red, linewidth=4, display=display.none, title="macd")
-// === Volume Profile ===
-vp_title = 'Volume Profile'
-vp_group = vp_title
-vp_tool_tip   = 'Volume Profile displays total trading activity (both buying and selling trading activity) over a specified time period at specific price levels:\n\n' +
-          ' - Row lengths indicate the amount of traded activity at specific price levels\n' +
-          ' - High traded zones usually represent consolidation zones (value areas)\n' +
-          ' - Low traded zones usually represent supply & demand or liquidity zones'
 
-vp_show = input.bool(false, title=vp_title, tooltip=vp_tool_tip, group=vp_group)
-vp_bbars = input.int(title='  Number of Bars', defval=150, minval=1, maxval=500, group=vp_group)
-vp_cnum = input.int(title='  Row size', defval=24, minval=5, maxval=100, group=vp_group)
-vp_percent = input.float(70., title='  Value Area Volume Percent', minval=0, maxval=100, group=vp_group)
-vp_poc_show = input.bool(true, title='  POC', inline='poc', group=vp_group)
-vp_poc_color = input.color(defval=#ff0000, title='  Color', inline='poc', group=vp_group)
-vp_poc_width = input.int(defval=2, title='  Width', minval=1, maxval=5, inline='poc', group=vp_group)
-vp_vup_color = input.color(defval=color.new(color.blue, 30), title='  Value Area Up', group=vp_group)
-vp_vdown_color = input.color(defval=color.new(color.orange, 30), title='  Value Area Down', group=vp_group)
-vp_up_color = input.color(defval=color.new(color.blue, 75), title='  Up Volume', group=vp_group)
-vp_down_color = input.color(defval=color.new(color.orange, 75), title='  Down Volume', group=vp_group)
+// === Market Sessions Indicator ===
+ms_group = 'Market Sessions Indicator'
+ms_border_width = 1
+ms_border_style = line.style_dashed
+
+ms_show = input.bool(false, title = "Enable", group = ms_group)
+
+ms_tokyo_show      = input.bool(true, '', inline='ms_tokyo', group=ms_group)
+ms_tokyo_label     = input.string('Tokyo', '', inline='ms_tokyo', group=ms_group, display = display.none)
+ms_tokyo_color     = input.color(color.rgb(255, 153, 0, 95), '' , inline='ms_tokyo', group=ms_group, display = display.none)
+ms_tokyo_time      = input.session(defval="0000-0900", title='     ', inline='ms_tokyo2', group=ms_group, display = display.none)
+
+ms_london_show     = input.bool(true, '', inline='ms_london', group=ms_group)
+ms_london_label    = input.string('London', '', inline='ms_london', group=ms_group, display = display.none)
+ms_london_color    = input.color(color.rgb(76, 175, 79, 90), '' , inline='ms_london', group=ms_group, display = display.none)
+ms_london_time     = input.session(defval="0700-1600", title='     ', inline='ms_london2', group=ms_group, display = display.none)
+
+ms_newyork_show    = input.bool(true, title='', inline='ms_newyork', group=ms_group)
+ms_newyork_label   = input.string('New York', '', inline='ms_newyork', group=ms_group, display = display.none)
+ms_newyork_color   = input.color(color.rgb(33, 149, 243, 90), '', inline='ms_newyork', group=ms_group, display = display.none)
+ms_newyork_time    = input.session(defval="1300-2200", title='     ', inline='ms_newyork2', group=ms_group, display = display.none)
+
+ms_sydney_show     = input.bool(false, title='', inline='ms_sydney', group=ms_group)
+ms_sydney_label    = input.string('Sydney', '', inline='ms_sydney', group=ms_group, display = display.none)
+ms_sydney_color    = input.color(color.rgb(164, 97, 187, 90), '', inline='ms_sydney', group=ms_group, display = display.none)
+ms_sydney_time     = input.session(defval="2100-0600", title='     ', inline='ms_sydney2', group=ms_group, display = display.none)
+
+ms_merge_sessions  = input.bool(false, 'Merge Overlaps', group = ms_group)
+ms_hide_weekends   = input.bool(true, 'Hide Weekends', group = ms_group)
+ms_label_size      = input.string('Normal', 'Label Size', options = ['Auto', 'Tiny', 'Small', 'Normal', 'Large', 'Huge'], group=ms_group, display = display.none)
+ms_display_type    = input.string('Boxes', 'Display Type', options = ['Boxes', 'Zones','Timeline'], group=ms_group, display = display.none)
+ms_days_back       = input.float(150, 'Lookback (Days)', group=ms_group, display = display.none, tooltip= 'This inputs defines the lookback period for plotting sessions. Eg. If it is set to 1, only the sessions of the past day will appear')
+
+
+ms_get_time_range(session_time) =>
+    ms_hide_weekends ? session_time+":123456" : session_time+":1234567"
+
+        
+ms_in_session(session_time) =>
+    not na(time(timeframe.period, session_time, "UTC")) and timeframe.isintraday
+
+
+ms_update_box(session_box, session_label_obj, session_high_price, session_low_price) =>
+    box.set_top(session_box, session_high_price)
+    box.set_bottom(session_box, session_low_price)
+    box.set_right(session_box, bar_index + 1)
+    label.set_x(session_label_obj, (box.get_left(session_box) + box.get_right(session_box)) / 2)
+    label.set_y(session_label_obj, session_high_price)
+
+var ms_tokyo_high_price     = 0.0, var ms_tokyo_low_price      = 0.0, var ms_tokyo_open_price     = 0.0, var box ms_tokyo_box       = na, var ms_tokyo_t     = 0.0, var label ms_tokyo_label_obj   = na, var line ms_tokyo_oc       = na, var string ms_tokyo_text   = str.tostring(ms_tokyo_label)
+var ms_london_high_price    = 0.0, var ms_london_low_price     = 0.0, var ms_london_open_price    = 0.0, var box ms_london_box      = na, var ms_london_t    = 0.0, var label ms_london_label_obj  = na, var line ms_london_oc      = na, var string ms_london_text  = str.tostring(ms_london_label)
+var ms_newyork_high_price   = 0.0, var ms_newyork_low_price    = 0.0, var ms_newyork_open_price   = 0.0, var box ms_newyork_box     = na, var ms_newyork_t   = 0.0, var label ms_newyork_label_obj = na, var line ms_newyork_oc     = na, var string ms_newyork_text = str.tostring(ms_newyork_label)
+var ms_sydney_high_price    = 0.0, var ms_sydney_low_price     = 0.0, var ms_sydney_open_price    = 0.0, var box ms_sydney_box      = na, var ms_sydney_t    = 0.0, var label ms_sydney_label_obj  = na, var line ms_sydney_oc      = na, var string ms_sydney_text  = str.tostring(ms_sydney_label)
+var ms_in_range = false
+var ms_in_london_var = false
+var ms_in_newyork_var = false
+var ms_in_sydney_var = false
+var ms_in_tokyo_var = false
+// Creating variables for alternative Sessions Box top and bottom (used for merging sessions)
+var float ms_tokyo_high_m   = 0, var float ms_tokyo_low_m    = 0, var float ms_london_high_m  = 0, var float ms_london_low_m   = 0, var float ms_newyork_high_m = 0, var float ms_newyork_low_m  = 0, var float ms_sydney_high_m  = 0, var float ms_sydney_low_m   = 0
+if ms_show
+    tokyo_time_range   = ms_get_time_range(ms_tokyo_time)
+    london_time_range  = ms_get_time_range(ms_london_time)
+    newyork_time_range = ms_get_time_range(ms_newyork_time)
+    sydney_time_range  = ms_get_time_range(ms_sydney_time)
+
+
+    mspd        = 24 * 60 * 60 * 1000
+    last_bar_date = timestamp(year(timenow), month(timenow), dayofmonth(timenow), hour(timenow), minute(timenow), second(timenow))
+    current_bar_date = timestamp(year, month, dayofmonth, hour, minute, second)
+    days_left    = math.abs(math.floor((last_bar_date - current_bar_date) / mspd))
+    ms_in_range     := days_left < ms_days_back
+
+    ms_in_tokyo_var        := ms_in_session(tokyo_time_range)
+    ms_tokyo_start     = ms_in_tokyo_var  and not ms_in_tokyo_var[1]
+    ms_in_london_var       := ms_in_session(london_time_range)
+    ms_london_start    = ms_in_london_var and not ms_in_london_var[1]
+    ms_in_newyork_var      := ms_in_session(newyork_time_range)
+    ms_newyork_start   = ms_in_newyork_var and not ms_in_newyork_var[1]
+    ms_in_sydney_var       := ms_in_session(sydney_time_range)
+    ms_sydney_start    = ms_in_sydney_var and not ms_in_sydney_var[1]
+
+    // Settings high, low, open at the beggining of the session
+    if ms_tokyo_start
+        ms_tokyo_high_price   := high
+        ms_tokyo_low_price    := low
+        ms_tokyo_open_price   := open
+    if ms_london_start
+        ms_london_high_price  := high
+        ms_london_low_price   := low
+        ms_london_open_price  := open
+    if ms_newyork_start
+        ms_newyork_high_price := high
+        ms_newyork_low_price  := low
+        ms_newyork_open_price := open
+    if ms_sydney_start
+        ms_sydney_high_price  := high
+        ms_sydney_low_price   := low
+        ms_sydney_open_price  := open
+
+    // Track session's max high and max low during the session
+    else if ms_in_tokyo_var
+        ms_tokyo_high_price   := math.max(ms_tokyo_high_price, high)
+        ms_tokyo_low_price    := math.min(ms_tokyo_low_price, low)
+    else if ms_in_london_var
+        ms_london_high_price  := math.max(ms_london_high_price, high)
+        ms_london_low_price   := math.min(ms_london_low_price, low)
+    else if ms_in_newyork_var
+        ms_newyork_high_price := math.max(ms_newyork_high_price, high)
+        ms_newyork_low_price  := math.min(ms_newyork_low_price, low)
+    else if ms_in_sydney_var
+        ms_sydney_high_price  := math.max(ms_sydney_high_price, high)
+        ms_sydney_low_price   := math.min(ms_sydney_low_price, low)
+
+    // Plotting session boxes at the beginning of each session
+    if ms_in_range
+        if ms_tokyo_start and ms_tokyo_show
+            ms_tokyo_box     := ms_display_type=='Boxes' ? box.new(left=bar_index, top=na, right=na, bottom=na, border_width=ms_border_width, bgcolor = ms_tokyo_color, border_style = ms_border_style, border_color=color.new(ms_tokyo_color, 40)) : na
+            ms_tokyo_label_obj   :=  label.new(x=na, y=na, text=ms_tokyo_text, textcolor=color.new(ms_tokyo_color, 40), color=color.rgb(0,0,0,100), size=get_size(ms_label_size))
+        if ms_london_start and ms_london_show
+            ms_london_box    := ms_display_type=='Boxes' ? box.new(left=bar_index, top=na, right=na, bottom=na, border_width=ms_border_width, bgcolor = ms_london_color, border_style = ms_border_style, border_color=color.new(ms_london_color, 40)) : na
+            ms_london_label_obj  :=  label.new(x=na, y=na, text=ms_london_text, textcolor=color.new(ms_london_color, 40), color=color.rgb(0,0,0,100), size=get_size(ms_label_size))
+        if ms_newyork_start and ms_newyork_show
+            ms_newyork_box   := ms_display_type=='Boxes' ? box.new(left=bar_index, top=na, right=na, bottom=na, border_width=ms_border_width, bgcolor = ms_newyork_color, border_style = ms_border_style, border_color=color.new(ms_newyork_color, 40)) : na
+            ms_newyork_label_obj :=  label.new(x=na, y=na, text=ms_newyork_text, textcolor=color.new(ms_newyork_color, 40), color=color.rgb(0,0,0,100), size=get_size(ms_label_size))
+        if ms_sydney_start and ms_sydney_show
+            ms_sydney_box    := ms_display_type=='Boxes' ? box.new(left=bar_index, top=na, right=na, bottom=na, border_width=ms_border_width, bgcolor = ms_sydney_color, border_style = ms_border_style, border_color=color.new(ms_sydney_color, 40)) : na
+            ms_sydney_label_obj  :=  label.new(x=na, y=na, text=ms_sydney_text, textcolor=color.new(ms_sydney_color, 40), color=color.rgb(0,0,0,100), size=get_size(ms_label_size))
+
+
+    // Updating session boxes during sessions
+    if ms_in_tokyo_var and ms_in_range
+        ms_tokyo_high_price := math.max(ms_tokyo_high_price, high)
+        ms_tokyo_low_price := math.min(ms_tokyo_low_price, low)
+        ms_update_box(ms_tokyo_box, ms_tokyo_label_obj, ms_tokyo_high_price, ms_tokyo_low_price)
+    if ms_in_london_var and ms_in_range
+        ms_london_high_price := math.max(ms_london_high_price, high)
+        ms_london_low_price := math.min(ms_london_low_price, low)
+        ms_update_box(ms_london_box, ms_london_label_obj, ms_london_high_price, ms_london_low_price)
+    if ms_in_newyork_var and ms_in_range
+        ms_newyork_high_price := math.max(ms_newyork_high_price, high)
+        ms_newyork_low_price := math.min(ms_newyork_low_price, low)
+        ms_update_box(ms_newyork_box, ms_newyork_label_obj, ms_newyork_high_price, ms_newyork_low_price)
+    if ms_in_sydney_var and ms_in_range
+        ms_sydney_high_price := math.max(ms_sydney_high_price, high)
+        ms_sydney_low_price := math.min(ms_sydney_low_price, low)
+        ms_update_box(ms_sydney_box, ms_sydney_label_obj, ms_sydney_high_price, ms_sydney_low_price)
+
+    // Coloring background if display_type=='Zones'
+    ms_tokyo_t   := time(timeframe.period, tokyo_time_range)
+    ms_london_t  := time(timeframe.period, london_time_range)
+    ms_newyork_t := time(timeframe.period, newyork_time_range)
+    ms_sydney_t  := time(timeframe.period, sydney_time_range)
+
+bgcolor(ms_display_type == 'Zones' and not ms_merge_sessions and ms_tokyo_show   and ms_in_range and  time == ms_tokyo_t   ? ms_tokyo_color   : na, editable = false)
+bgcolor(ms_display_type == 'Zones' and not ms_merge_sessions and ms_london_show  and ms_in_range and  time == ms_london_t  ? ms_london_color  : na, editable = false)
+bgcolor(ms_display_type == 'Zones' and not ms_merge_sessions and ms_newyork_show and ms_in_range and  time == ms_newyork_t ? ms_newyork_color : na, editable = false)
+bgcolor(ms_display_type == 'Zones' and not ms_merge_sessions and ms_sydney_show  and ms_in_range and  time == ms_sydney_t  ? ms_sydney_color  : na, editable = false)
+bgcolor(ms_display_type == 'Zones' and ms_merge_sessions and not ms_in_london_var  and ms_tokyo_show   and ms_in_range and  time == ms_tokyo_t   ? ms_tokyo_color   : na, editable = false)
+bgcolor(ms_display_type == 'Zones' and ms_merge_sessions and not ms_in_newyork_var and ms_london_show  and ms_in_range and  time == ms_london_t  ? ms_london_color  : na, editable = false)
+bgcolor(ms_display_type == 'Zones' and ms_merge_sessions and not ms_in_sydney_var  and ms_newyork_show and ms_in_range and  time == ms_newyork_t ? ms_newyork_color : na, editable = false)
+bgcolor(ms_display_type == 'Zones' and ms_merge_sessions and not ms_in_tokyo_var   and ms_sydney_show  and ms_in_range and  time == ms_sydney_t  ? ms_sydney_color  : na, editable = false)
+
+// Plotting sessions in Timeline form
+plotshape(ms_display_type=='Timeline' and (ms_merge_sessions and ms_london_show  ? (ms_tokyo_show   and ms_in_tokyo_var   and not ms_in_london_var)  : ms_tokyo_show   and ms_in_tokyo_var),   style=shape.square, color=ms_tokyo_color,   location = location.bottom, size=size.auto, display = display.pane)
+plotshape(ms_display_type=='Timeline' and (ms_merge_sessions and ms_newyork_show ? (ms_london_show  and ms_in_london_var  and not ms_in_newyork_var) : ms_london_show  and ms_in_london_var),  style=shape.square, color=ms_london_color,  location = location.bottom, size=size.auto, display = display.pane)
+plotshape(ms_display_type=='Timeline' and (ms_merge_sessions and ms_sydney_show  ? (ms_newyork_show and ms_in_newyork_var and not ms_in_sydney_var)  : ms_newyork_show and ms_in_newyork_var), style=shape.square, color=ms_newyork_color, location = location.bottom, size=size.auto, display = display.pane)
+plotshape(ms_display_type=='Timeline' and (ms_merge_sessions and ms_tokyo_show   ? (ms_sydney_show  and ms_in_sydney_var  and not ms_in_tokyo_var)   : ms_sydney_show  and ms_in_sydney_var),  style=shape.square, color=ms_sydney_color,  location = location.bottom, size=size.auto, display = display.pane)
+
+// Creating alerts
+alertcondition(ms_in_tokyo_var   and not ms_in_tokyo_var[1], 'Tokyo Open', 'The Tokyo Session has started')
+alertcondition(ms_in_london_var  and not ms_in_london_var[1], 'London Open', 'The London Session has started')
+alertcondition(ms_in_newyork_var and not ms_in_newyork_var[1], 'New York Open', 'The New York Session has started')
+alertcondition(ms_in_sydney_var  and not ms_in_sydney_var[1], 'Sydney Open', 'The Sydney Session has started')
+alertcondition(high > ms_tokyo_high_price[0]    and ms_in_tokyo_var, 'Tokyo Session - New High', 'New High in Tokyo Session')
+alertcondition(high > ms_london_high_price[0]   and ms_in_london_var, 'London Session - New High', 'New High in London Session')
+alertcondition(high > ms_newyork_high_price[0]  and ms_in_newyork_var, 'New York Session - New High', 'New High in New York Session')
+alertcondition(high > ms_sydney_high_price[0]   and ms_in_sydney_var, 'Sydney Session - New High', 'New High in Sydney Session')
+alertcondition(low  > ms_tokyo_low_price[0]     and ms_in_tokyo_var, 'Tokyo Session - New Low', 'New Low in Tokyo Session')
+alertcondition(low  > ms_london_low_price[0]    and ms_in_london_var, 'London Session - New Low', 'New Low in London Session')
+alertcondition(low  > ms_newyork_low_price[0]   and ms_in_newyork_var, 'New York Session - New Low', 'New Low In New York Session')
+alertcondition(low  > ms_sydney_low_price[0]    and ms_in_sydney_var, 'Sydney Session - New Low', 'New Low In Sydney Session')
+
+// === Volume Profile ===
+vp_group = 'Volume Profile'
+
+vp_show = input.bool(false, title='Enable', group=vp_group)
+vp_bars_count = input.int(title='Number of Bars', defval=150, minval=1, maxval=500, group=vp_group, display = display.none)
+vp_row_size = input.int(title='Row size', defval=24, minval=5, maxval=100, group=vp_group, display = display.none)
+vp_percent = input.float(70., title='Value Area Volume Percent', minval=0, maxval=100, group=vp_group, display = display.none)
+vp_poc_show = input.bool(false, title='POC', inline='poc', group=vp_group)
+vp_poc_color = input.color(defval=#ff0000, title='Color', inline='poc', group=vp_group)
+vp_poc_width = input.int(defval=2, title='Width', minval=1, maxval=5, inline='poc', group=vp_group, display = display.none)
+vp_vup_color = input.color(defval=color.new(color.blue, 30), title='Value Area Up', group=vp_group)
+vp_vdown_color = input.color(defval=color.new(color.orange, 30), title='Value Area Down', group=vp_group)
+vp_up_color = input.color(defval=color.new(color.blue, 75), title='Up Volume', group=vp_group)
+vp_down_color = input.color(defval=color.new(color.orange, 75), title='Down Volume', group=vp_group)
 
 vp_get_vol(y11, y12, y21, y22, height, vol) => nz(math.max(math.min(math.max(y11, y12), math.max(y21, y22)) - math.max(math.min(y11, y12), math.min(y21, y22)), 0) * vol / height)
 
 if vp_show 
-    vp_top = ta.highest(vp_bbars)
-    vp_bot = ta.lowest(vp_bbars)
-    vp_dist = (vp_top - vp_bot) / 500
-    vp_step = (vp_top - vp_bot) / vp_cnum
+    highest = ta.highest(vp_bars_count)
+    lowest = ta.lowest(vp_bars_count)
+    distance = (highest - lowest) / 500
+    step = (highest - lowest) / vp_row_size
 
-    vp_levels = array.new_float(vp_cnum + 1)
-    for x = 0 to vp_cnum by 1
-        array.set(vp_levels, x, vp_bot + vp_step * x)
+    levels = array.new_float(vp_row_size + 1)
+    for x = 0 to vp_row_size by 1
+        array.set(levels, x, lowest + step * x)
 
     if barstate.islast
-        vp_volumes = array.new_float(vp_cnum * 2, 0.)
-        for bars = 0 to vp_bbars - 1 by 1
+        volumes = array.new_float(vp_row_size * 2, 0.)
+        for bars = 0 to vp_bars_count - 1 by 1
             body_top = math.max(close[bars], open[bars])
             body_bot = math.min(close[bars], open[bars])
             its_green = close[bars] >= open[bars]
@@ -200,60 +496,55 @@ if vp_show
             body_vol = body * volume[bars] / (2 * top_wick + 2 * bottom_wick + body)
             top_wick_vol = 2 * top_wick * volume[bars] / (2 * top_wick + 2 * bottom_wick + body)
             bottom_wick_vol = 2 * bottom_wick * volume[bars] / (2 * top_wick + 2 * bottom_wick + body)
-            for x = 0 to vp_cnum - 1 by 1
-                array.set(vp_volumes, x, array.get(vp_volumes, x) + (its_green ? vp_get_vol(array.get(vp_levels, x), array.get(vp_levels, x + 1), body_bot, body_top, body, body_vol) : 0) + vp_get_vol(array.get(vp_levels, x), array.get(vp_levels, x + 1), body_top, high[bars], top_wick, top_wick_vol) / 2 + vp_get_vol(array.get(vp_levels, x), array.get(vp_levels, x + 1), body_bot, low[bars], bottom_wick, bottom_wick_vol) / 2)
-                array.set(vp_volumes, x + vp_cnum, array.get(vp_volumes, x + vp_cnum) + (its_green ? 0 : vp_get_vol(array.get(vp_levels, x), array.get(vp_levels, x + 1), body_bot, body_top, body, body_vol)) + vp_get_vol(array.get(vp_levels, x), array.get(vp_levels, x + 1), body_top, high[bars], top_wick, top_wick_vol) / 2 + vp_get_vol(array.get(vp_levels, x), array.get(vp_levels, x + 1), body_bot, low[bars], bottom_wick, bottom_wick_vol) / 2)
+            for x = 0 to vp_row_size - 1 by 1
+                array.set(volumes, x, array.get(volumes, x) + (its_green ? vp_get_vol(array.get(levels, x), array.get(levels, x + 1), body_bot, body_top, body, body_vol) : 0) + vp_get_vol(array.get(levels, x), array.get(levels, x + 1), body_top, high[bars], top_wick, top_wick_vol) / 2 + vp_get_vol(array.get(levels, x), array.get(levels, x + 1), body_bot, low[bars], bottom_wick, bottom_wick_vol) / 2)
+                array.set(volumes, x + vp_row_size, array.get(volumes, x + vp_row_size) + (its_green ? 0 : vp_get_vol(array.get(levels, x), array.get(levels, x + 1), body_bot, body_top, body, body_vol)) + vp_get_vol(array.get(levels, x), array.get(levels, x + 1), body_top, high[bars], top_wick, top_wick_vol) / 2 + vp_get_vol(array.get(levels, x), array.get(levels, x + 1), body_bot, low[bars], bottom_wick, bottom_wick_vol) / 2)
 
-        vp_total_vols = array.new_float(vp_cnum, 0.)
-        for x = 0 to vp_cnum - 1 by 1
-            array.set(vp_total_vols, x, array.get(vp_volumes, x) + array.get(vp_volumes, x + vp_cnum))
+        total_volumes = array.new_float(vp_row_size, 0.)
+        for x = 0 to vp_row_size - 1 by 1
+            array.set(total_volumes, x, array.get(volumes, x) + array.get(volumes, x + vp_row_size))
 
-        vp_poc = array.indexof(vp_total_vols, array.max(vp_total_vols))
+        poc = array.indexof(total_volumes, array.max(total_volumes))
 
-        vp_total_max = array.sum(vp_total_vols) * vp_percent / 100.
-        vp_va_total = array.get(vp_total_vols, vp_poc)
-        vp_up = vp_poc
-        vp_down = vp_poc
-        for x = 0 to vp_cnum - 1 by 1
-            if vp_va_total >= vp_total_max
+        total_max = array.sum(total_volumes) * vp_percent / 100.
+        va_total = array.get(total_volumes, poc)
+        up = poc
+        down = poc
+        for x = 0 to vp_row_size - 1 by 1
+            if va_total >= total_max
                 break
-            vp_upper_vol = vp_up < vp_cnum - 1 ? array.get(vp_total_vols, vp_up + 1) : 0.
-            vp_lower_vol = vp_down > 0 ? array.get(vp_total_vols, vp_down - 1) : 0.
+            vp_upper_vol = up < vp_row_size - 1 ? array.get(total_volumes, up + 1) : 0.
+            vp_lower_vol = down > 0 ? array.get(total_volumes, down - 1) : 0.
             if vp_upper_vol == 0 and vp_lower_vol == 0
                 break
             if vp_upper_vol >= vp_lower_vol
-                vp_va_total += vp_upper_vol
-                vp_up += 1
+                va_total += vp_upper_vol
+                up += 1
             else
-                vp_va_total += vp_lower_vol
-                vp_down -= 1
+                va_total += vp_lower_vol
+                down -= 1
 
-        vp_max_vol = array.max(vp_total_vols)
-        for x = 0 to vp_cnum * 2 - 1 by 1
-            array.set(vp_volumes, x, array.get(vp_volumes, x) * vp_bbars / (3 * vp_max_vol))
+        max_volume = array.max(total_volumes)
+        for x = 0 to vp_row_size * 2 - 1 by 1
+            array.set(volumes, x, array.get(volumes, x) * vp_bars_count / (3 * max_volume))
 
-        vp_vol_bars = array.new_box(vp_cnum * 2, na)
-        for x = 0 to vp_cnum - 1 by 1
-            box.delete(array.get(vp_vol_bars, x))
-            box.delete(array.get(vp_vol_bars, x + vp_cnum))
-            array.set(vp_vol_bars, x, box.new(bar_index - vp_bbars + 1, array.get(vp_levels, x + 1) - vp_dist,  bar_index - vp_bbars + 1 + math.round(array.get(vp_volumes, x)), array.get(vp_levels, x) + vp_dist, border_width=0, bgcolor=x >= vp_down and x <= vp_up ? vp_vup_color : vp_up_color))
-            array.set(vp_vol_bars, x + vp_cnum, box.new(bar_index - vp_bbars + 1 + math.round(array.get(vp_volumes, x)),  array.get(vp_levels, x + 1) - vp_dist, bar_index - vp_bbars + 1 + math.round(array.get(vp_volumes, x)) + math.round(array.get(vp_volumes, x + vp_cnum)), array.get(vp_levels, x) + vp_dist, border_width=0, bgcolor=x >= vp_down and x <= vp_up ? vp_vdown_color : vp_down_color))
+        volume_bars = array.new_box(vp_row_size * 2, na)
+        for x = 0 to vp_row_size - 1 by 1
+            box.delete(array.get(volume_bars, x))
+            box.delete(array.get(volume_bars, x + vp_row_size))
+            array.set(volume_bars, x, box.new(bar_index - vp_bars_count + 1, array.get(levels, x + 1) - distance,  bar_index - vp_bars_count + 1 + math.round(array.get(volumes, x)), array.get(levels, x) + distance, border_width=0, bgcolor=x >= down and x <= up ? vp_vup_color : vp_up_color))
+            array.set(volume_bars, x + vp_row_size, box.new(bar_index - vp_bars_count + 1 + math.round(array.get(volumes, x)),  array.get(levels, x + 1) - distance, bar_index - vp_bars_count + 1 + math.round(array.get(volumes, x)) + math.round(array.get(volumes, x + vp_row_size)), array.get(levels, x) + distance, border_width=0, bgcolor=x >= down and x <= up ? vp_vdown_color : vp_down_color))
 
-        vp_poc_level = (array.get(vp_levels, vp_poc) + array.get(vp_levels, vp_poc + 1)) / 2
+        poc_level = (array.get(levels, poc) + array.get(levels, poc + 1)) / 2
         var line vp_poc_line = na
         if vp_poc_show
             line.delete(vp_poc_line)
-            vp_poc_line := line.new(bar_index - vp_bbars + 1, vp_poc_level, bar_index - vp_bbars + 2, vp_poc_level, extend=extend.right, color=vp_poc_color, width=vp_poc_width)
+            vp_poc_line := line.new(bar_index - vp_bars_count + 1, poc_level, bar_index - vp_bars_count + 2, poc_level, extend=extend.right, color=vp_poc_color, width=vp_poc_width)
 
 // === Williams Fractal ===
-wf_title = 'Williams Fractal'
-wf_group = wf_title
-wf_tool_tip   = 'Displays Williams Fractals, which identify potential turning points in the market:\n\n' +
-          ' - A bullish fractal forms when the lowest low is surrounded by two higher lows on each side\n' +
-          ' - A bearish fractal forms when the highest high is surrounded by two lower highs on each side\n\n' +
-          'These fractals can be used to identify support and resistance levels or trend reversals.'
+wf_group = 'Williams Fractal'
 
-wf_show = input.bool(false, title = wf_title, tooltip = wf_tool_tip, group = wf_group)
+wf_show = input.bool(false, title = 'Enable', group = wf_group)
 
 var bool wf_bullish = false
 var bool wf_bearish = false
@@ -262,5 +553,6 @@ if wf_show
     wf_bullish := high[2] > high[3] and high[2] > high[4] and high[2] > high[1] and high[2] > high[0]
     wf_bearish := low[2] < low[3] and low[2] < low[4] and low[2] < low[1] and low[2] < low[0]
 
-plotshape(wf_bullish, title="Up Fractal", location=location.abovebar, style=shape.triangledown, color=color.red, size=size.tiny, offset=-2)
-plotshape(wf_bearish, title="Down Fractal", location=location.belowbar, style=shape.triangleup, color=color.green, size=size.tiny, offset=-2)
+plotshape(wf_bullish, title="Up Fractal", location=location.abovebar, style=shape.triangledown, color=color.red, size=size.tiny, offset=-2, display = display.pane)
+plotshape(wf_bearish, title="Down Fractal", location=location.belowbar, style=shape.triangleup, color=color.green, size=size.tiny, offset=-2, display = display.pane)
+

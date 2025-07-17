@@ -1,0 +1,6 @@
+//@version=5
+indicator("Trend Cloud", overlay=true)
+
+ema150 = ta.ema(close, 150)
+ema250 = ta.ema(close, 250)
+fill( plot(ema150, "", na, editable=false), plot(ema250, "", na, editable=false), ema150 > ema250 ? color.new(color.green, 70) : ema150 < ema250 ? color.new(color.red, 70) : na )

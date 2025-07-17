@@ -1,0 +1,58 @@
+//@version=5
+indicator("Gradient Cloud", overlay=true)
+
+// cloud parameters
+k_length = 0.425
+uphigh_color = #ca009e4d
+uplow_color = #ca009e27
+downhigh_color = #b300ff2f
+downlow_color = #9700ca10
+
+[middle_kc1, upper_kc1, lower_kc1] = ta.kc(close, 10, 10.5 * k_length)
+[middle_kc2, upper_kc2, lower_kc2] = ta.kc(close, 10, 9.5 * k_length)
+[middle_kc3, upper_kc3, lower_kc3] = ta.kc(close, 10, 8 * k_length)
+[middle_kc4, upper_kc4, lower_kc4] = ta.kc(close, 10, 3 * k_length)
+
+middle_line_value = ta.ema((upper_kc1 + lower_kc1) / 2, 50)
+middle_line_color = middle_line_value > middle_line_value[1] ? color.green : color.red
+middle_line = plot(middle_line_value, "Middle Line", color=middle_line_color, linewidth=2, editable=false)
+
+src = close
+len = 14
+up = ta.rma(math.max(ta.change(src), 0), len)
+down = ta.rma(-math.min(ta.change(src), 0), len)
+rsi = down == 0 ? 100 : up == 0 ? 0 : 100 - 100 / (1 + up / down)
+
+tier_low = rsi <= 45
+tier_mid = rsi > 45 and rsi <= 55  
+tier_high = rsi > 55
+
+color color_var = na
+color_var := tier_low ? #db3943 : tier_mid ? #9900CA : tier_high ? #30b56a : na
+
+if (tier_mid)
+    color_var := rsi <= 50 ? #9900ca : #b200ff
+
+if (tier_high)
+    color_var := rsi <= 65 ? #30b56a : #30b56a
+
+tier_low1 = rsi <= 30
+tier_low2 = rsi > 30 and rsi <= 45
+tier_high2 = rsi > 65 and rsi <= 75
+tier_high3 = rsi > 55
+
+down_tier = tier_low1 ? #e43a72 : tier_low2 ? #e6002352 : na
+up_tier = tier_high2 ? #00ffcc : tier_high3 ? #00ffcc65 : na
+
+k1 = plot(ta.ema(upper_kc1, 50), "", color = down_tier, style=plot.style_circles, linewidth = 2, editable=false)
+k2 = plot(ta.ema(upper_kc2, 50), "", na, editable=false)
+k3 = plot(ta.ema(upper_kc3, 50), "", na, editable=false)
+k4 = plot(ta.ema(upper_kc4, 50), "", na, editable=false)
+k5 = plot(ta.ema(lower_kc4, 50), "", na, editable=false)
+k6 = plot(ta.ema(lower_kc3, 50), "", na, editable=false)
+k7 = plot(ta.ema(lower_kc2, 50), "", na, editable=false)
+k8 = plot(ta.ema(lower_kc1, 50), "", color = up_tier, style=plot.style_circles, linewidth = 2, editable=false)
+fill(k1, k2,  uphigh_color , editable=false)
+fill(k2, k3,  uplow_color , editable=false)
+fill(k6, k7,  downlow_color , editable=false)
+fill(k7, k8,  downhigh_color, editable=false)

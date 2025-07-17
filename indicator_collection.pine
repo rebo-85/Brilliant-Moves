@@ -1,5 +1,5 @@
 //@version=6
-indicator("Indicator Collection", overlay=true)
+indicator("Indicator Collection [ReBo]", overlay=true)
 
 // General
 get_size(size) =>
@@ -23,12 +23,30 @@ get_position(position) =>
         'Top Left' => position.top_left
         'Top Right' => position.top_right
 
+supertrend(source, factor, atr_length) =>
+    atr = ta.atr(atr_length)
+    upper_band = source + factor * atr
+    lower_band = source - factor * atr
+    prev_lower_band = nz(lower_band[1])
+    prev_upper_band = nz(upper_band[1])
+    lower_band := lower_band > prev_lower_band or close[1] < prev_lower_band ? lower_band : prev_lower_band
+    upper_band := upper_band < prev_upper_band or close[1] > prev_upper_band ? upper_band : prev_upper_band
+    int direction = na
+    float super_trend = na
+    prev_super_trend = super_trend[1]
+    if na(atr[1])
+        direction := 2
+    else if prev_super_trend == prev_upper_band
+        direction := close > upper_band ? -1 : 1
+    else
+        direction := close < lower_band ? 1 : -1
+    super_trend := direction == -1 ? lower_band : upper_band
+    [super_trend, direction]
 // === Bollinger Bands ===
-bb_group = 'Bollinger Bands'
-
-bb_show = input.bool(true, title = 'Enable', group = bb_group, display = display.none)
-bb_length = input.int(20, title="Length", group = bb_group, display = display.none)
-bb_mult = input.float(2.0, title="Multiplier", group = bb_group, display = display.none)
+bb_group    = 'Bollinger Bands'
+bb_show     = input.bool(true, title = 'Enable', group = bb_group, display = display.none)
+bb_length   = input.int(20, title="Length", group = bb_group, display = display.none)
+bb_mult     = input.float(2.0, title="Multiplier", group = bb_group, display = display.none)
 
 var float bb_upper = na
 var float bb_lower = na
@@ -45,12 +63,10 @@ plot(bb_upper, title="BB Upper", color=color.rgb(255, 255, 255), linewidth=1, di
 plot(bb_lower, title="BB Lower", color=color.rgb(255, 255, 255), linewidth=1, display = display.pane)
 plot(bb_basis, title="BB Basis", color=color.rgb(0, 0, 0), linewidth=1, display = display.pane)
 // === Dashboard ===
-db_group = 'Dashboard'
-
-db_show = input.bool(true, 'Enable', group = db_group)
-
+db_group    = 'Dashboard'
+db_show     = input.bool(true, 'Enable', group = db_group)
 db_location = input.string("Top Right","Dashboard Location", ["Top Right", "Bottom Right", "Bottom Left", "Middle Left"],group = db_group, display = display.none)
-db_size = input.string("Small","Dashboard Size       ", ["Tiny","Small","Normal","Large"],group = db_group, display = display.none)
+db_size     = input.string("Small","Dashboard Size", ["Tiny","Small","Normal","Large"],group = db_group, display = display.none)
 
 
 db_atr = 3 * ta.atr(10)
@@ -120,7 +136,7 @@ if db_show
         tf_h12  = no_repaint_security(syminfo.tickerid, "720" , adx_trend)
         tf_d1   = no_repaint_security(syminfo.tickerid, "1440", adx_trend)
 
-        table.cell(db_table, 0, 0, '  Dashboard                                ', text_color = color.white,text_halign = text.align_left, text_size = db_table_size,bgcolor = #18233a)
+        table.cell(db_table, 0, 0, 'Dashboard', text_color = color.white,text_halign = text.align_center, text_size = db_table_size,bgcolor = #18233a)
         table.merge_cells(db_table, 0, 0, 3, 0)
         db_table.cell(0, 2, "⚠️ Volatility", text_color = color.white, text_size = db_table_size, text_halign = text.align_center)
         db_table.cell(1, 2, volume_status, text_color = color.white, text_size = db_table_size, text_halign = text.align_center)
@@ -158,36 +174,45 @@ if db_show
         db_table.cell(3, 8, tf_d1 != 0 ? "Bullish" : "Bearish", text_color = tf_d1 != 0 ? color.green : color.red, text_size = db_table_size, text_halign = text.align_center)
 
 // === EMA ===
-ema_group = 'Exponential Movement Average'
+ema_group       = 'Exponential Movement Average'
+ema_show        = input.bool(false, title = 'Enable', group = ema_group)
+ema_short_show  = input.bool(true, title = '', inline = 'ema_short', group = ema_group)
+ema_short_len   = input.int(150, title="Short", inline = 'ema_short', group = ema_group, display = display.none)
+ema_mid_show  = input.bool(true, title = '', inline = 'ema_mid', group = ema_group)
+ema_mid_len     = input.int(200, title="Mid", inline = 'ema_mid', group = ema_group, display = display.none)
+ema_long_show  = input.bool(true, title = '', inline = 'ema_long', group = ema_group)
+ema_long_len    = input.int(250, title="Long", inline = 'ema_long', group = ema_group, display = display.none)
+ema_fill_show        = input.bool(true, title = 'Fill', group=ema_group)
 
-ema_show = input.bool(false, title = 'Enable', group = ema_group)
-ema_custom_len  = input.int(200, title="Custom", group = ema_group, display = display.none)
-ema_short_len  = input.int(20, title="Short", group = ema_group, display = display.none)
-ema_mid_len  = input.int(50, title="Mid", group = ema_group, display = display.none)
-ema_long_len = input.int(100, title="Long", group = ema_group, display = display.none)
-
-var float ema_custom = na
-var float ema_short = na
-var float ema_mid = na
-var float ema_long = na
+float ema_custom = na
+float ema_short = na
+float ema_mid = na
+float ema_long = na
+float ema_cloud_low = na
+float ema_cloud_high = na
 
 if ema_show
-    ema_custom  := ta.ema(close, ema_custom_len)
-    ema_short  := ta.ema(close, ema_short_len)
-    ema_mid  := ta.ema(close, ema_mid_len)
-    ema_long  := ta.ema(close, ema_long_len)
+    ema_short  := ema_short_show ? ta.ema(close, ema_short_len) : na
+    ema_mid  := ema_mid_show ? ta.ema(close, ema_mid_len) : na
+    ema_long  := ema_long_show ? ta.ema(close, ema_long_len) : na
 
-plot(ema_custom, title="EMA Custom", color=color.rgb(255, 187, 0), linewidth=2, display = display.pane)
-plot(ema_short, title="EMA Short", color=color.rgb(51, 255, 0), linewidth=2, display = display.pane)
-plot(ema_mid, title="EMA Mid", color=color.rgb(255, 251, 0), linewidth=2, display = display.pane)
-plot(ema_long, title="EMA Long", color=color.rgb(173, 11, 11), linewidth=2, display = display.pane)
+    ema_cloud_low  := ema_fill_show ? ta.ema(close, ema_short_len) : na
+    ema_cloud_high  := ema_fill_show ? ta.ema(close, ema_long_len) : na
+
+plot(ema_short, title="EMA Short", color=color.green, linewidth=2, display = display.pane)
+plot(ema_mid, title="EMA Mid", color=color.yellow, linewidth=2, display = display.pane)
+plot(ema_long, title="EMA Long", color=color.red, linewidth=2, display = display.pane)
+
+ema_cloud_low_plot = plot(ema_cloud_low, editable=false, display = display.none)
+ema_cloud_high_plot = plot(ema_cloud_high, editable=false, display = display.none)
+fill(ema_cloud_low_plot, ema_cloud_high_plot, ema_cloud_low > ema_cloud_high ? color.new(color.green, 70) : ema_cloud_low < ema_cloud_high ? color.new(color.red, 70) : na, editable = false)
 
 // Entry Confirmation Indicator
-ec_group = 'Entry Confirmation Indicator'
-ec_show = input.bool(false, title = 'Enable', group = ec_group)
-ec_sensitivity = input.float(2.75, title="Sensitivity", group = ec_group, display = display.none)
-ec_atr = input.int(10, title="ATR Period", group = ec_group, display = display.none)
-ec_heikin_ashi = input.bool(false, title="Use Heikin Ashi Candles", group = ec_group)
+ec_group        = 'Entry Confirmation Indicator'
+ec_show         = input.bool(false, title = 'Enable', group = ec_group)
+ec_sensitivity  = input.float(2.75, title="Sensitivity", group = ec_group, display = display.none)
+ec_atr          = input.int(10, title="ATR Period", group = ec_group, display = display.none)
+ec_heikin_ashi  = input.bool(false, title="Use Heikin Ashi Candles", group = ec_group)
 
 var bool ec_buy_signal = false
 var bool ec_sell_signal = false
@@ -240,37 +265,70 @@ barcolor(ec_sell_bar ? color.red : na)
 alertcondition(ec_buy_signal, "BUY", "BUY")
 alertcondition(ec_sell_signal, "SELL", "SELL")
 
+// Entry Suggestion
+es_group        = "Entry Suggestion"
+es_show         = input.bool(false, "Enable", group=es_group)
+es_strength     = input.float(1,"Strength" ,group=es_group,display = display.none)
+es_sma_length   = input.int(13, 'SMA Length', group=es_group, display=display.none)
+es_ema_length   = input.int(200, 'EMA Length', group=es_group, display=display.none)
+es_atr_length = input.int(14, 'ATR length', group=es_group, display=display.none)
+es_atr_mult = input.float(2.2, 'ATR Multiplier', group=es_group, display=display.none)
+es_factor       = input.int(11, 'Factor', group=es_group, display=display.none)
+es_sensitivity  = input.float(2.5, 'Sensitivity', group=es_group, display=display.none)
 
-// Market Decision Indicator
-md_group = 'Market Decision Indicator'
-md_show = input.bool(false, title = "Enable", group = md_group)
-md_lookback = input.int(5, title="Lookback", group = md_group, display = display.none)
-md_ema = input.int(100, title="EMA", group = md_group, display = display.none)
-md_lookback_hl = input.int(2, title="Lookback HL", group = md_group, display = display.none)
+[supertrend_val, direction] = supertrend(open, es_sensitivity, es_factor)
+es_sma = ta.sma(close, es_sma_length)
+es_is_bullish = ta.crossover(close, supertrend_val) and close >= es_sma
+es_is_bearish = ta.crossunder(close, supertrend_val) and close <= es_sma
 
-var float md_ema_high = na
-var float md_ema_low = na
-var bool md_ma_cd_long = false
-var bool md_ma_cd_short = false
-if md_show
-    md_ema_high := ta.ema(ta.highest(high, md_lookback_hl), md_ema)
-    md_ema_low := ta.ema(ta.lowest(low, md_lookback_hl), md_ema)
-    
-    fast_ma = ta.ema(close, 12)
-    slow_ma = ta.ema(close, 26)
+es_use_percent_trailing_sl  = false
+es_percent_trailing_sl      = 1.0
+es_tp1_show                 = true
+es_tp2_show                 = true
+es_tp3_show                 = true
+es_show_labels              = true
 
-    ma_diff = fast_ma - slow_ma
-    md_signal = ta.sma(ma_diff, 9)
-    md_ma_cd_long := ta.crossover(ma_diff, md_signal) and close > md_ema_high and md_ema_high > md_ema_high[md_lookback] and md_ema_low > md_ema_low[md_lookback]
-    md_ma_cd_short := ta.crossunder(ma_diff, md_signal) and close < md_ema_low and md_ema_low < md_ema_low[md_lookback] and md_ema_high < md_ema_high[md_lookback]
+mult_tp1 = es_strength
+mult_tp2 = es_strength * 2
+mult_tp3 = es_strength * 3
 
-md_high = plot(md_ema_high, color=md_ema_high > md_ema_high[md_lookback] ? color.green : color.red, linewidth=2, display = display.pane)
-md_low = plot(md_ema_low, color=md_ema_low < md_ema_low[md_lookback] ? color.red : color.green, linewidth=2, display = display.pane)
+none = close > 0
+es_bullish_count = ta.barssince(es_is_bullish)
+es_bearish_count = ta.barssince(es_is_bearish)
+es_trigger = nz(es_bullish_count, bar_index) < nz(es_bearish_count, bar_index) ? 1 : 0
+es_atr = es_use_percent_trailing_sl ? ((es_trigger != 0 ? low : high) * (es_percent_trailing_sl / 100.0)) : ta.atr(es_atr_length) * es_atr_mult
+es_atr_stop = (es_trigger != 0) ? (low - es_atr) : (high + es_atr)
 
-fill(md_high, md_low, color=close > md_ema_high and md_ema_high > md_ema_high[md_lookback] and md_ema_low > md_ema_low[md_lookback] ? color.new(color.green, 70) :
-     close < md_ema_low and md_ema_low < md_ema_low[md_lookback] and md_ema_high < md_ema_high[md_lookback] ? color.new(color.red, 70) : color.new(color.black, 70))
+es_last_trade(source) => ta.valuewhen(es_is_bullish or es_is_bearish, source, 0)
+es_entry_y = es_last_trade(close)
+es_stop_y = es_last_trade(es_atr_stop)
+es_tp1_y = (es_entry_y-es_last_trade(es_atr_stop))*mult_tp1 + es_entry_y
+es_tp2_y = (es_entry_y-es_last_trade(es_atr_stop))*mult_tp2 + es_entry_y
+es_tp3_y = (es_entry_y-es_last_trade(es_atr_stop))*mult_tp3 + es_entry_y
+es_last_trade_bar_index = ta.valuewhen(es_is_bullish or es_is_bearish, bar_index, 0)
 
-plot(md_ma_cd_long or md_ma_cd_short ? close : na, style=plot.style_circles, color=md_ma_cd_long ? color.yellow : color.red, linewidth=4, display=display.none, title="macd")
+es_create_label(condition, y, txt, color) =>
+    var label last_label = na
+    if es_show and condition and bar_index == es_last_trade_bar_index
+        label.delete(last_label)
+        last_label := label.new(bar_index, y, txt, xloc.bar_index, yloc.price, color, label.style_label_left, color.white, size.normal)
+    else
+        na
+
+es_create_line(condition, y, color, style) =>
+    line = es_show and condition ? line.new(bar_index - ((es_trigger != 0) ? es_bullish_count : es_bearish_count), y, bar_index + 1, y, xloc.bar_index, extend.none, color, style) : na
+    line.delete(line[1])
+es_create_label(none, es_entry_y, "Entry : " + str.tostring(math.round_to_mintick(es_entry_y)), color.orange)
+es_create_label(none, es_stop_y , "Stop loss : " + str.tostring(math.round_to_mintick(es_atr_stop)), color.red)
+es_create_label(es_tp1_show and mult_tp1 != 0, es_tp1_y, "TP 1 : " + str.tostring(math.round_to_mintick(es_tp1_y)), color.green)
+es_create_label(es_tp2_show and mult_tp2 != 0, es_tp2_y, "TP 2 : " + str.tostring(math.round_to_mintick(es_tp2_y)), color.green)
+es_create_label(es_tp3_show and mult_tp3 != 0, es_tp3_y, "TP 3 : " + str.tostring(math.round_to_mintick(es_tp3_y)), color.green)
+
+es_create_line(none, es_entry_y, color.orange, line.style_dashed)
+es_create_line(none, es_stop_y , color.red   , line.style_solid )
+es_create_line(es_tp1_show and mult_tp1 != 0, es_tp1_y, color.green, line.style_dotted)
+es_create_line(es_tp2_show and mult_tp2 != 0, es_tp2_y, color.green, line.style_dotted)
+es_create_line(es_tp3_show and mult_tp3 != 0, es_tp3_y, color.green, line.style_dotted)
 
 // === Market Sessions Indicator ===
 ms_group = 'Market Sessions Indicator'

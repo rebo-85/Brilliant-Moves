@@ -1,0 +1,20 @@
+//@version=5
+indicator("Delta Volume Example", overlay=false)
+
+var float up_volume = na
+var float down_volume = na
+
+if bar_index == 0
+    up_volume := 0
+    down_volume := 0
+
+if close > open
+    up_volume := na(up_volume) ? volume : up_volume + volume
+    down_volume := na(down_volume) ? 0 : down_volume
+else if close < open
+    down_volume := na(down_volume) ? volume : down_volume + volume
+    up_volume := na(up_volume) ? 0 : up_volume
+
+delta_volume = up_volume - down_volume
+
+plot(delta_volume, color=color.blue, title="Delta Volume")

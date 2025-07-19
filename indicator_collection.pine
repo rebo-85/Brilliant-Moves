@@ -1,28 +1,7 @@
 //@version=6
 indicator("Indicator Collection [ReBo]", overlay=true)
 
-// General
-get_size(size) =>
-    switch size
-        'Auto'   => size.auto
-        'Tiny'   => size.tiny
-        'Small'  => size.small
-        'Normal' => size.normal
-        'Large' => size.large
-        'Huge' => size.huge
-
-get_position(position) =>
-    switch position
-        'Bottom Center'   => position.bottom_center
-        'Bottom Left'   => position.bottom_left
-        'Bottom Right'  => position.bottom_right
-        'Middle Center' => position.middle_center
-        'Middle Left' => position.middle_left
-        'Middle Right' => position.middle_right
-        'Top Center' => position.top_center
-        'Top Left' => position.top_left
-        'Top Right' => position.top_right
-
+// Internal Functions
 supertrend(source, factor, atr_length) =>
     atr = ta.atr(atr_length)
     upper_band = source + factor * atr
@@ -42,6 +21,43 @@ supertrend(source, factor, atr_length) =>
         direction := close < lower_band ? 1 : -1
     super_trend := direction == -1 ? lower_band : upper_band
     [super_trend, direction]
+
+    
+method get_position(string position) =>
+    switch position
+        'Bottom Center'   => position.bottom_center
+        'Bottom Left'   => position.bottom_left
+        'Bottom Right'  => position.bottom_right
+        'Middle Center' => position.middle_center
+        'Middle Left' => position.middle_left
+        'Middle Right' => position.middle_right
+        'Top Center' => position.top_center
+        'Top Left' => position.top_left
+        'Top Right' => position.top_right
+
+method get_size(string size) =>
+    switch size
+        'Auto'   => size.auto
+        'Tiny'   => size.tiny
+        'Small'  => size.small
+        'Normal' => size.normal
+        'Large' => size.large
+        'Huge' => size.huge
+
+method get_rsi_source(string type) =>
+    switch type
+        "Open"   => open
+        "High"   => high
+        "Low"    => low
+        "HL2"    => (high + low) / 2
+        "HLC3"   => (high + low + close) / 3
+        "OHLC4"  => (open + high + low + close) / 4
+        "Volume" => volume
+        => close  
+
+method clamp(float val, float min_val, float max_val) =>
+    val > max_val ? max_val : val < min_val ? min_val : val
+
 // === Bollinger Bands ===
 bb_group    = 'Bollinger Bands'
 bb_show     = input.bool(true, title = 'Enable', group = bb_group, display = display.none)
@@ -63,115 +79,150 @@ plot(bb_upper, title="BB Upper", color=color.rgb(255, 255, 255), linewidth=1, di
 plot(bb_lower, title="BB Lower", color=color.rgb(255, 255, 255), linewidth=1, display = display.pane)
 plot(bb_basis, title="BB Basis", color=color.rgb(0, 0, 0), linewidth=1, display = display.pane)
 // === Dashboard ===
-db_group    = 'Dashboard'
-db_show     = input.bool(true, 'Enable', group = db_group)
-db_location = input.string("Top Right","Dashboard Location", ["Top Right", "Bottom Right", "Bottom Left", "Middle Left"],group = db_group, display = display.none)
-db_size     = input.string("Small","Dashboard Size", ["Tiny","Small","Normal","Large"],group = db_group, display = display.none)
+string db_group         = 'Dashboard'
+bool db_show            = input.bool(defval = true, title = 'Enable', group = db_group)
+string db_loc           = input.string(defval = "Bottom Right", title = "Dashboard Location", options = ["Top Right", "Bottom Right", "Bottom Left", "Middle Left"],group = db_group, display = display.none)
+string db_size          = input.string(defval = "Small", title = "Dashboard Size", options = ["Tiny","Small","Normal","Large"],group = db_group, display = display.none)
+int db_fast_len         = input.int(defval = 12, title="MACD Fast Length", group = db_group, display = display.none)
+int db_slow_len         = input.int(defval = 26, title="MACD Slow Length", group = db_group, display = display.none)
+int db_macd_smoothing   = input.int(defval = 9, title="MACD Signal Smoothing", group = db_group, display = display.none)
+int db_voli_len         = input.int(defval = 10, title="Volatility Lookback", group = db_group, display = display.none)
+int db_atr_smoothing    = input.int(defval = 20, title="Volatility Smoothing", group = db_group, display = display.none)
+string db_rsi_src_type  = input.string(defval = "Close", title = "RSI Source", options = ["Close", "Open", "High", "Low", "HL2", "HLC3", "OHLC4", "Volume"], group = db_group, display = display.none)
+int db_rsi_length       = input.int(defval = 14, title="RSI Length", group = db_group, display = display.none)
+int db_dmi_smoothing    = input.int(defval = 14, title="DMI Smoothing Period", group = db_group, display = display.none)
+int db_di_length        = input.int(defval = 14, title="DMI DI Period", group = db_group, display = display.none)
+int db_dvol_length      = input.int(defval = 50, title="Delta Volume Period", group = db_group, display = display.none)
+int db_tf_length        = input.int(defval = 5, title="TF Lookback", group = db_group, display = display.none)
+bool db_show_tf         = input.bool(defval = true, title = 'Timeframe Trends', group = db_group)
+
+// Volatility
+float db_raw_atr = 3 * ta.atr(db_voli_len)
+float db_sma_atr = ta.sma(db_raw_atr, db_atr_smoothing)
+float db_std_atr = 2 * ta.stdev(db_raw_atr, db_atr_smoothing)
+
+float db_top_band = db_sma_atr + db_std_atr
+float db_bot_band = db_sma_atr - db_std_atr
+
+float db_atr_range = db_top_band - db_bot_band
+float db_dev = db_atr_range != 0 ? (db_raw_atr - db_bot_band) / db_atr_range : 0.5
+
+float db_volatility_index = 40 * db_dev + 30
+db_volatility_index := clamp(db_volatility_index, 0, 100)
+
+//RSI
+float db_rsi_source = get_rsi_source(db_rsi_src_type) 
+float db_rsi = ta.rsi(db_rsi_source, db_rsi_length)
+
+// MACD
+[db_macd_line, db_macd_signal, db_histogram] = ta.macd(close, db_fast_len, db_slow_len, db_macd_smoothing)
+
+// DMI
+[db_di_plus, db_di_minus, db_adx] = ta.dmi(db_di_length, db_dmi_smoothing)
+
+// Delta Volume
+float db_dvol = close > open ? volume : close < open ? -volume : 0
+
+float db_dvol_max = math.max(math.abs(ta.highest(db_dvol, db_dvol_length)), math.abs(ta.lowest(db_dvol, db_dvol_length)))
+float db_dvol_normalized = db_dvol_max != 0 ? db_dvol / db_dvol_max : 0
 
 
-db_atr = 3 * ta.atr(10)
-db_std_atr = 2 * ta.stdev(db_atr, 20)
-db_sma_atr = ta.sma(db_atr, 20)
+get_tf_trend(tf) =>
+    open_ = request.security(syminfo.tickerid, tf, open[db_tf_length - 1], lookahead=barmerge.lookahead_off)
+    close_ = request.security(syminfo.tickerid, tf, close, lookahead=barmerge.lookahead_off)
+    trend_up = close_ > open_
+    trend_down = close_ < open_
+    trend = trend_up ? 1 : trend_down ? -1 : 0
+    symbol = trend == 1 ? "▲" : trend == -1 ? "▼" : "-"
+    color_ = (trend == 1 ? color.green : (trend == -1 ? color.red : color.gray))
+    [ symbol, color_]
 
-db_rsi_length = 14
-db_rsi_source = close
-db_rsi = ta.rsi(db_rsi_source, db_rsi_length)
+[db_m1, db_m1_color]   = get_tf_trend("1")
+[db_m3, db_m3_color]   = get_tf_trend("3")
+[db_m5, db_m5_color]   = get_tf_trend("5")
+[db_m15, db_m15_color] = get_tf_trend("15")
+[db_m30, db_m30_color] = get_tf_trend("30")
+[db_h1, db_h1_color]   = get_tf_trend("60")
+[db_h2, db_h2_color]   = get_tf_trend("120")
+[db_h4, db_h4_color]   = get_tf_trend("240")
+[db_h12, db_h12_color] = get_tf_trend("720")
+[db_d1, db_d1_color]   = get_tf_trend("D")
 
 
-db_di_length = 14
-db_adx_smoothing = 14
-[db_di_plus, db_di_minus, db_adx] = ta.dmi(db_di_length, db_adx_smoothing)
-
-db_median_adx = ta.sma(db_adx, 14)
-db_bullish_threshold_multiplier = 1.2
-db_bearish_threshold_multiplier = 0.8
-
-db_table = table.new(get_position(db_location), 18, 10 , bgcolor = #11172565 , border_color = #373a4600 , border_width = 1 , frame_color = #000000 , frame_width = 1)
-
-no_repaint_security(sym, res, src) =>
-    chart_tf_in_minutes = timeframe.multiplier * ( timeframe.isseconds ? 1. / 60 : timeframe.isminutes ? 1. : timeframe.isdaily ? 60. * 24 : timeframe.isweekly ? 60. * 24 * 7 : timeframe.ismonthly ? 60. * 24 * 30.4375 : na)
-    is_equal_tf = str.tonumber(res) == chart_tf_in_minutes
-    is_higher_tf = str.tonumber(res) > chart_tf_in_minutes
-    is_too_small_tf = (timeframe.isweekly and res == "1") or (timeframe.ismonthly and str.tonumber(res) < 10)
-    float result = na
-    result := is_equal_tf ? src : result
-    result := is_higher_tf ? request.security(sym, res, src, barmerge.gaps_off, barmerge.lookahead_on) : result
-    arr = request.security_lower_tf(syminfo.tickerid, is_higher_tf ? str.tostring(chart_tf_in_minutes) : is_too_small_tf ? (timeframe.isweekly ? "3" : "10") : res, src)
-    if array.size(arr) > 1 and not is_equal_tf and not is_higher_tf
-        result := array.pop(arr)
-    array.clear(arr)
-    result
+method plot_cell(table _table, int col, int row, string data, color text_color = #FFFFFF, string text_align = text.align_center, color bg_color = na) => 
+    _table.cell(col,row,data,text_color = text_color, text_size = get_size(db_size), text_halign = text_align, bgcolor = bg_color)
 
 if db_show
     if barstate.islast
-
-        db_table_size = get_size(db_size)
-
-        top_atr_dev = db_sma_atr + db_std_atr
-        bottom_atr_dev = db_sma_atr - db_std_atr
-        dev = (db_atr - bottom_atr_dev) / (top_atr_dev - bottom_atr_dev)
-
-        volatility = 40 * dev + 30
-        volume_status = volatility < 35 ? "Very Low" :volatility < 50 ? "Low" :volatility < 70 ? "High" :"Very High"
-
-        trend_treshold = 50
-
-        rsi_color = db_rsi > trend_treshold ? color.green : color.red
-
+        string db_table_size = get_size(db_size)
+        table db_table = table.new(get_position(db_loc), 18, 20 , bgcolor = #11172565 , border_color = #373a4600 , border_width = 1 , frame_color = #000000 , frame_width = 1)
         
-        bullish_threshold = db_median_adx * db_bullish_threshold_multiplier
-        bearish_threshold = db_median_adx * db_bearish_threshold_multiplier
-        bullish = db_adx > bullish_threshold
-        bearish = db_adx < bearish_threshold
-        adx_trend = bullish ? 1 : bearish ? -1 : 0
+        float hist_diff = db_histogram - db_histogram[1]
 
-        tf_m1   = no_repaint_security(syminfo.tickerid, "1"   , adx_trend)
-        tf_m3   = no_repaint_security(syminfo.tickerid, "3"   , adx_trend)
-        tf_m5   = no_repaint_security(syminfo.tickerid, "5"   , adx_trend)
-        tf_m15  = no_repaint_security(syminfo.tickerid, "15"  , adx_trend)
-        tf_m30  = no_repaint_security(syminfo.tickerid, "30"  , adx_trend)
-        tf_h1   = no_repaint_security(syminfo.tickerid, "60"  , adx_trend)
-        tf_h2   = no_repaint_security(syminfo.tickerid, "120" , adx_trend)
-        tf_h4   = no_repaint_security(syminfo.tickerid, "240" , adx_trend)
-        tf_h12  = no_repaint_security(syminfo.tickerid, "720" , adx_trend)
-        tf_d1   = no_repaint_security(syminfo.tickerid, "1440", adx_trend)
+        color volatility_color = db_volatility_index < 35 ? color.green : db_volatility_index < 50 ? color.yellow : db_volatility_index < 70 ? color.orange : color.red
+        color rsi_color = db_rsi < 30 ? color.green : db_rsi > 70 ? color.red : db_rsi > 50 ? color.orange : color.yellow
+        color histogram_color = db_histogram > 0 and hist_diff > 0 ? color.green : db_histogram > 0 and hist_diff < 0 ? color.orange : db_histogram < 0 and hist_diff < 0 ? color.red : db_histogram < 0 and hist_diff > 0 ? color.yellow : color.white
+        color dvol_color = db_dvol_normalized > 0.5 ? color.green : db_dvol_normalized > 0.2 ? color.orange : db_dvol_normalized < -0.5 ? color.red : db_dvol_normalized < -0.2 ? color.orange : color.yellow
+        color dmi_color = db_adx > 25 and db_di_plus > db_di_minus ? color.green : db_adx > 25 and db_di_minus > db_di_plus ? color.red : db_adx > 20 ? color.orange : color.yellow
 
-        table.cell(db_table, 0, 0, 'Dashboard', text_color = color.white,text_halign = text.align_center, text_size = db_table_size,bgcolor = #18233a)
-        table.merge_cells(db_table, 0, 0, 3, 0)
-        db_table.cell(0, 2, "⚠️ Volatility", text_color = color.white, text_size = db_table_size, text_halign = text.align_center)
-        db_table.cell(1, 2, volume_status, text_color = color.white, text_size = db_table_size, text_halign = text.align_center)
-        db_table.cell(2, 2, "📈 RSI", text_color = color.white, text_size = db_table_size, text_halign = text.align_center)
-        db_table.cell(3, 2, str.tostring(db_rsi,"#.##"), text_color = rsi_color, text_size = db_table_size, text_halign = text.align_center)
-        
-        db_table.cell(0, 3, "Timeframe", text_color = #b0b2b9, text_size = db_table_size, text_halign = text.align_center)
-        db_table.cell(1, 3, "Trend", text_color = #b0b2b9, text_size = db_table_size, text_halign = text.align_center)
-        db_table.cell(2, 3, "Timeframe", text_color = #b0b2b9, text_size = db_table_size, text_halign = text.align_center)
-        db_table.cell(3, 3, "Trend", text_color = #b0b2b9, text_size = db_table_size, text_halign = text.align_center)
-        
-        db_table.cell(0, 4, "1 Minute", text_color = color.white, text_size = db_table_size, text_halign = text.align_center)
-        db_table.cell(1, 4, tf_m1 != 0 ? "Bullish" : "Bearish", text_color = tf_m1 != 0 ? color.green : color.red, text_size = db_table_size, text_halign = text.align_center)
-        db_table.cell(2, 4, "1 Hour", text_color = color.white, text_size = db_table_size, text_halign = text.align_center)
-        db_table.cell(3, 4, tf_h1 != 0 ? "Bullish" : "Bearish", text_color = tf_h1 != 0 ? color.green : color.red, text_size = db_table_size, text_halign = text.align_center)
-        
-        db_table.cell(0, 5, "3 Minute", text_color = color.white, text_size = db_table_size, text_halign = text.align_center)
-        db_table.cell(1, 5, tf_m3 != 0 ? "Bullish" : "Bearish", text_color = tf_m3 != 0 ? color.green : color.red, text_size = db_table_size, text_halign = text.align_center)
-        db_table.cell(2, 5, "2 Hour", text_color = color.white, text_size = db_table_size, text_halign = text.align_center)
-        db_table.cell(3, 5, tf_h2 != 0 ? "Bullish" : "Bearish", text_color = tf_h2 != 0 ? color.green : color.red, text_size = db_table_size, text_halign = text.align_center)
-        
-        db_table.cell(0, 6, "5 Minute", text_color = color.white, text_size = db_table_size, text_halign = text.align_center)
-        db_table.cell(1, 6, tf_m5 != 0 ? "Bullish" : "Bearish", text_color = tf_m5 != 0 ? color.green : color.red, text_size = db_table_size, text_halign = text.align_center)
-        db_table.cell(2, 6, "4 Hour", text_color = color.white, text_size = db_table_size, text_halign = text.align_center)
-        db_table.cell(3, 6, tf_h4 != 0 ? "Bullish" : "Bearish", text_color = tf_h4 != 0 ? color.green : color.red, text_size = db_table_size, text_halign = text.align_center)
-        
-        db_table.cell(0, 7, "15 Minute", text_color = color.white, text_size = db_table_size, text_halign = text.align_center)
-        db_table.cell(1, 7, tf_m15 != 0 ? "Bullish" : "Bearish", text_color = tf_m15 != 0 ? color.green : color.red, text_size = db_table_size, text_halign = text.align_center)
-        db_table.cell(2, 7, "12 Hour", text_color = color.white, text_size = db_table_size, text_halign = text.align_center)
-        db_table.cell(3, 7, tf_h12 != 0 ? "Bullish" : "Bearish", text_color = tf_h12 != 0 ? color.green : color.red, text_size = db_table_size, text_halign = text.align_center)
+        // Dashboard title
+        db_table.plot_cell(0, 0, 'Dashboard', bg_color = #18233a)
+        table.merge_cells(db_table, 0, 0, db_show_tf ? 5 : 1, 0)
 
-        db_table.cell(0, 8, "30 Minute", text_color = color.white, text_size = db_table_size, text_halign = text.align_center)
-        db_table.cell(1, 8, tf_m30 != 0 ? "Bullish" : "Bearish", text_color = tf_m30 != 0 ? color.green : color.red, text_size = db_table_size, text_halign = text.align_center)
-        db_table.cell(2, 8, "Daily", text_color = color.white, text_size = db_table_size, text_halign = text.align_center)
-        db_table.cell(3, 8, tf_d1 != 0 ? "Bullish" : "Bearish", text_color = tf_d1 != 0 ? color.green : color.red, text_size = db_table_size, text_halign = text.align_center)
+        // // Technicals
+        db_table.plot_cell(0, 1, 'Technicals', text_color = #b0b2b9)
+        table.merge_cells(db_table, 0, 1, 1, 1)
+
+        db_table.plot_cell(0, 2, 'Volatility Index', text_align = text.align_left)
+        db_table.plot_cell(1, 2, str.tostring(db_volatility_index,"#.##"), text_color = volatility_color)
+
+        db_table.plot_cell(0, 3, 'RSI', text_align = text.align_left)
+        db_table.plot_cell(1, 3,  str.tostring(db_rsi,"#.##"), text_color = rsi_color)
+
+        db_table.plot_cell(0, 4, 'MACD Histogram', text_align = text.align_left)
+        db_table.plot_cell(1, 4,  str.tostring(db_histogram,"#.##"), text_color = histogram_color)
+
+        db_table.plot_cell(0, 5, 'DMI', text_align = text.align_left)
+        db_table.plot_cell(1, 5,  str.tostring(db_adx,"#.##"), text_color = dmi_color)
+
+        db_table.plot_cell(0, 6, 'Delta Volume', text_align = text.align_left)
+        db_table.plot_cell(1, 6,  str.tostring(db_dvol_normalized,"#.##"), text_color = dvol_color)
+
+        // // Timeframe Trends
+        if db_show_tf
+            db_table.plot_cell(4, 1, 'Timeframe', text_color = #b0b2b9)
+            db_table.plot_cell(5, 1, 'Trend', text_color = #b0b2b9)
+
+            db_table.plot_cell(4, 2, "1 Minute")
+            db_table.plot_cell(5, 2, db_m1, text_color = db_m1_color)
+
+            db_table.plot_cell(4, 3, "3 Minute")
+            db_table.plot_cell(5, 3, db_m3, text_color = db_m3_color)
+
+            db_table.plot_cell(4, 4, "5 Minute")
+            db_table.plot_cell(5, 4, db_m5, text_color = db_m5_color)
+
+            db_table.plot_cell(4, 5, "15 Minute")
+            db_table.plot_cell(5, 5, db_m15, text_color = db_m15_color)
+
+            db_table.plot_cell(4, 6, "30 Minute")
+            db_table.plot_cell(5, 6, db_m30, text_color = db_m30_color)
+
+            db_table.plot_cell(4, 7, "1 Hour")
+            db_table.plot_cell(5, 7, db_h1, text_color = db_h1_color)
+
+            db_table.plot_cell(4, 8, "2 Hour")
+            db_table.plot_cell(5, 8, db_h2, text_color = db_h2_color)
+
+            db_table.plot_cell(4, 9, "4 Hour")
+            db_table.plot_cell(5, 9, db_h4, text_color = db_h4_color)
+
+            db_table.plot_cell(4, 10, "12 Hour")
+            db_table.plot_cell(5, 10, db_h12, text_color = db_h12_color)
+
+            db_table.plot_cell(4, 11, "Daily")
+            db_table.plot_cell(5, 11, db_d1, text_color = db_d1_color)
+
 
 // === EMA ===
 ema_group       = 'Exponential Movement Average'

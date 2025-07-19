@@ -1,0 +1,239 @@
+//@version=6
+indicator("Brilliant Moves v.1.1 [ReBo]", overlay=true)
+//===============================================================================
+// Internal Data
+//===============================================================================
+// --- Functions ---
+method clamp(float val, float min_val, float max_val) =>
+    val > max_val ? max_val : val < min_val ? min_val : val
+
+method get_position(string position) =>
+    switch position
+        'Bottom Center'   => position.bottom_center
+        'Bottom Left'   => position.bottom_left
+        'Bottom Right'  => position.bottom_right
+        'Middle Center' => position.middle_center
+        'Middle Left' => position.middle_left
+        'Middle Right' => position.middle_right
+        'Top Center' => position.top_center
+        'Top Left' => position.top_left
+        'Top Right' => position.top_right
+
+method get_size(string size) =>
+    switch size
+        'Auto'   => size.auto
+        'Tiny'   => size.tiny
+        'Small'  => size.small
+        'Normal' => size.normal
+        'Large' => size.large
+        'Huge' => size.huge
+
+method get_source(string type) =>
+    switch type
+        "Open"   => open
+        "High"   => high
+        "Low"    => low
+        "HL2"    => (high + low) / 2
+        "HLC3"   => (high + low + close) / 3
+        "OHLC4"  => (open + high + low + close) / 4
+        "Volume" => volume
+        => close 
+    
+get_tf_trend(tf, len) =>
+    var open_ = request.security(syminfo.tickerid, tf, open[len - 1], lookahead=barmerge.lookahead_off)
+    var close_ = request.security(syminfo.tickerid, tf, close, lookahead=barmerge.lookahead_off)
+    int trend = close_ > open_ ? 1 : close_ < open_ ? -1 : 0
+    trend
+
+// --- Types ---
+// --- Variables ---
+string gen_group    = 'General'
+string db_group     = 'Dashboard'
+string bb_group    = 'Bollinger Bands'
+
+//===============================================================================
+// Processes
+//===============================================================================
+
+// --- General ---
+// Inputs
+int macd_fast_len   = input.int(defval = 12, title="MACD Fast Length", minval = 1, group = gen_group, display = display.none)
+int macd_slow_len   = input.int(defval = 26, title="MACD Slow Length", minval = 1, group = gen_group, display = display.none)
+int macd_smoothing  = input.int(defval = 9, title="MACD Signal Smoothing", minval = 1, group = gen_group, display = display.none)
+int voli_len        = input.int(defval = 10, title="Volatility Lookback", minval = 1, group = gen_group, display = display.none)
+int atr_smoothing   = input.int(defval = 20, title="Volatility Smoothing", minval = 1, group = gen_group, display = display.none)
+string rsi_src_type = input.string(defval = "Close", title = "RSI Source", options = ["Close", "Open", "High", "Low", "HL2", "HLC3", "OHLC4", "Volume"], group = gen_group, display = display.none)
+int rsi_len         = input.int(defval = 14, title="RSI Length", minval = 1, group = gen_group, display = display.none)
+int dmi_smoothing   = input.int(defval = 14, title="DMI Smoothing Period", minval = 1, group = gen_group, display = display.none)
+int di_len          = input.int(defval = 14, title="DMI DI Period", minval = 1, group = gen_group, display = display.none)
+int dvol_len        = input.int(defval = 50, title="Delta Volume Period", minval = 1, group = gen_group, display = display.none)
+
+// Volatility
+float voli_atr = 3 * ta.atr(voli_len)
+float voli_sma_atr = ta.sma(voli_atr, atr_smoothing)
+float voli_std_atr = 2 * ta.stdev(voli_atr, atr_smoothing)
+
+float voli_top = voli_sma_atr + voli_std_atr
+float voli_bot = voli_sma_atr - voli_std_atr
+
+float voli_atr_range = voli_top - voli_bot
+float voli_dev = voli_atr_range != 0 ? (voli_atr - voli_bot) / voli_atr_range : 0.5
+
+float voli_index = 40 * voli_dev + 30
+voli_index := clamp(voli_index, 0, 100)
+
+//RSI
+float rsi_src = get_source(rsi_src_type) 
+float rsi = ta.rsi(rsi_src, rsi_len)
+
+// MACD
+[macd_line, macd_signal, macd_histogram] = ta.macd(close, macd_fast_len, macd_slow_len, macd_smoothing)
+
+// DMI
+[di_plus, di_minus, adx] = ta.dmi(di_len, dmi_smoothing)
+
+// Delta Volume
+float db_dvol = close > open ? volume : close < open ? -volume : 0
+
+float db_dvol_max = math.max(math.abs(ta.highest(db_dvol, dvol_len)), math.abs(ta.lowest(db_dvol, dvol_len)))
+float db_dvol_normalized = db_dvol_max != 0 ? db_dvol / db_dvol_max : 0
+
+// === Dashboard ===
+bool db_show            = input.bool(defval = true, title = 'Enable', group = db_group)
+string db_loc           = input.string(defval = "Bottom Right", title = "Dashboard Location", options = ["Top Right", "Bottom Right", "Bottom Left", "Middle Left"], group = db_group, display = display.none)
+string db_size          = input.string(defval = "Small", title = "Dashboard Size", options = ["Tiny", "Small", "Normal", "Large"], group = db_group, display = display.none)
+bool db_show_tf         = input.bool(defval = true, title = 'Timeframe Trends', group = db_group)
+string db_tf_dis_type   = input.string(defval = "▲/▼", title = "Trend Display Type", options = ["▲/▼", "↑/↓", "UP/DOWN","Bullish/Bearish"], group = db_group, display = display.none)
+int db_tf_length        = input.int(defval = 3, title="Timeframe Lookback", minval = 1, group = db_group, display = display.none)
+
+
+method get_tf_trend_text(string tf) =>
+    int trend = get_tf_trend(tf, db_tf_length)
+    array<string> texts = str.split(db_tf_dis_type, '/')
+    _text = trend == 1 ? texts.get(0) : trend == -1 ? texts.get(1) : "-"
+    _color = (trend == 1 ? color.green : (trend == -1 ? color.red : color.white))
+    [ _text, _color]
+
+
+method plot_cell(table _table, int col, int row, string data, color text_color = #FFFFFF, string text_align = text.align_center, color bg_color = na) => 
+    _table.cell(col,row,data,text_color = text_color, text_size = get_size(db_size), text_halign = text_align, bgcolor = bg_color)
+
+if db_show
+    if barstate.islast
+        string db_table_size = get_size(db_size)
+        table _table = table.new(get_position(db_loc), 18, 20 , bgcolor = #11172565 , border_color = #373a4600 , border_width = 1 , frame_color = #000000 , frame_width = 1)
+        
+        float hist_diff = macd_histogram - macd_histogram[1]
+
+        color volatility_color = voli_index < 35 ? color.green : voli_index < 50 ? color.yellow : voli_index < 70 ? color.orange : color.red
+        color rsi_color = rsi < 30 ? color.green : rsi > 70 ? color.red : rsi > 50 ? color.orange : color.yellow
+        color histogram_color = macd_histogram > 0 and hist_diff > 0 ? color.green : macd_histogram > 0 and hist_diff < 0 ? color.orange : macd_histogram < 0 and hist_diff < 0 ? color.red : macd_histogram < 0 and hist_diff > 0 ? color.yellow : color.white
+        color dvol_color = db_dvol_normalized > 0.5 ? color.green : db_dvol_normalized > 0.2 ? color.orange : db_dvol_normalized < -0.5 ? color.red : db_dvol_normalized < -0.2 ? color.orange : color.yellow
+        color dmi_color = adx > 25 and di_plus > di_minus ? color.green : adx > 25 and di_minus > di_plus ? color.red : adx > 20 ? color.orange : color.yellow
+
+        // Dashboard title
+        _table.plot_cell(0, 0, 'Dashboard', bg_color = #18233a)
+        _table.merge_cells(0, 0, db_show_tf ? 5 : 1, 0)
+
+        // // Technicals
+        _table.plot_cell(0, 1, 'Technicals', text_color = #b0b2b9)
+        _table.merge_cells(0, 1, 1, 1)
+
+        _table.plot_cell(0, 2, 'Volatility Index', text_align = text.align_left)
+        _table.plot_cell(1, 2, str.tostring(voli_index,"#.##"), text_color = volatility_color)
+
+        _table.plot_cell(0, 3, 'RSI', text_align = text.align_left)
+        _table.plot_cell(1, 3,  str.tostring(rsi,"#.##"), text_color = rsi_color)
+
+        _table.plot_cell(0, 4, 'MACD Histogram', text_align = text.align_left)
+        _table.plot_cell(1, 4,  str.tostring(macd_histogram,"#.##"), text_color = histogram_color)
+
+        _table.plot_cell(0, 5, 'DMI', text_align = text.align_left)
+        _table.plot_cell(1, 5,  str.tostring(adx,"#.##"), text_color = dmi_color)
+
+        _table.plot_cell(0, 6, 'Delta Volume', text_align = text.align_left)
+        _table.plot_cell(1, 6,  str.tostring(db_dvol_normalized,"#.##"), text_color = dvol_color)
+
+        // // Timeframe Trends
+        if db_show_tf
+            [m1_text, m1_color]   = get_tf_trend_text("1")
+            [m3_text, m3_color]   = get_tf_trend_text("3")
+            [m5_text, m5_color]   = get_tf_trend_text("5")
+            [m15_text, m15_color] = get_tf_trend_text("15")
+            [m30_text, m30_color] = get_tf_trend_text("30")
+            [h1_text, h1_color]   = get_tf_trend_text("60")
+            [h2_text, h2_color]   = get_tf_trend_text("120")
+            [h4_text, h4_color]   = get_tf_trend_text("240")
+            [h12_text, h12_color] = get_tf_trend_text("720")
+            [d1_text, d1_color]   = get_tf_trend_text("D")
+
+            _table.plot_cell(4, 1, 'Timeframe', text_color = #b0b2b9)
+            _table.plot_cell(5, 1, 'Trend', text_color = #b0b2b9)
+
+            _table.plot_cell(4, 2, "1 Minute")
+            _table.plot_cell(5, 2, m1_text, text_color = m1_color)
+
+            _table.plot_cell(4, 3, "3 Minute")
+            _table.plot_cell(5, 3, m3_text, text_color = m3_color)
+
+            _table.plot_cell(4, 4, "5 Minute")
+            _table.plot_cell(5, 4, m5_text, text_color = m5_color)
+
+            _table.plot_cell(4, 5, "15 Minute")
+            _table.plot_cell(5, 5, m15_text, text_color = m15_color)
+
+            _table.plot_cell(4, 6, "30 Minute")
+            _table.plot_cell(5, 6, m30_text, text_color = m30_color)
+
+            _table.plot_cell(4, 7, "1 Hour")
+            _table.plot_cell(5, 7, h1_text, text_color = h1_color)
+
+            _table.plot_cell(4, 8, "2 Hour")
+            _table.plot_cell(5, 8, h2_text, text_color = h2_color)
+
+            _table.plot_cell(4, 9, "4 Hour")
+            _table.plot_cell(5, 9, h4_text, text_color = h4_color)
+
+            _table.plot_cell(4, 10, "12 Hour")
+            _table.plot_cell(5, 10, h12_text, text_color = h12_color)
+
+            _table.plot_cell(4, 11, "Daily")
+            _table.plot_cell(5, 11, d1_text, text_color = d1_color)
+
+
+// === Bolinger Bands ===
+bool bb_show            = input.bool(defval = true, title = 'Enable', group = bb_group, display = display.none)
+int bb_length           = input.int(defval = 20, title="Length", group = bb_group, display = display.none)
+float bb_mult           = input.float(defval = 2.0, title="Multiplier", group = bb_group, display = display.none)
+color bb_upper_color    = input.color(defval = color.red, title="BB Upper", group = bb_group)
+color bb_lower_color    = input.color(defval = color.green, title="BB Lower", group = bb_group)
+color bb_basis_color    = input.color(defval = color.yellow, title="BB Basis", group = bb_group)
+
+
+float bb_upper = na
+float bb_lower = na
+float bb_basis = na
+float bb_upper_min = na
+float bb_lower_min = na
+float bb_basis_min = na
+
+if bb_show
+    bb_basis := ta.sma(close, bb_length)
+    bb_dev = bb_mult * ta.stdev(close, bb_length)
+    bb_upper := bb_basis + bb_dev
+    bb_lower := bb_basis - bb_dev
+
+    bb_basis_min := ta.sma(close, int(bb_length * 0.75))
+    bb_dev_min = (bb_mult * 0.75) * ta.stdev(close, int(bb_length * 0.75))
+    bb_upper_min := bb_basis_min + bb_dev_min
+    bb_lower_min := bb_basis_min - bb_dev_min
+
+var bb_upper_plot = plot(bb_upper, title="BB Upper", color=bb_upper_color, linewidth=2, editable = false, display = display.pane)
+var bb_lower_plot = plot(bb_lower, title="BB Lower", color=bb_lower_color, linewidth=2, editable = false, display = display.pane)
+var bb_basis_plot = plot(bb_basis, title="BB Basis", color=bb_basis_color, linewidth=2, editable = false, display = display.pane)
+
+var bb_upper_min_plot = plot(bb_upper_min, editable = false, display = display.none)
+var bb_lower_min_plot = plot(bb_lower_min, editable = false, display = display.none)
+
+fill(bb_upper_plot, bb_upper_min_plot, bb_upper, bb_upper_min, color.new(bb_upper_color, 0), #00000000, title = "", editable=false)
+fill(bb_lower_plot, bb_lower_min_plot, bb_lower, bb_lower_min, color.new(bb_lower_color, 0), #00000000, title = "", editable=false)

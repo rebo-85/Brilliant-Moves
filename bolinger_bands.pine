@@ -1,0 +1,19 @@
+bb_group    = 'Bollinger Bands'
+bb_show     = input.bool(true, title = 'Enable', group = bb_group, display = display.none)
+bb_length   = input.int(20, title="Length", group = bb_group, display = display.none)
+bb_mult     = input.float(2.0, title="Multiplier", group = bb_group, display = display.none)
+
+var float bb_upper = na
+var float bb_lower = na
+var float bb_basis = na
+
+if bb_show
+    bb_basis := ta.sma(close, bb_length)
+    bb_dev = bb_mult * ta.stdev(close, bb_length)
+    bb_upper := bb_basis + bb_dev
+    bb_lower := bb_basis - bb_dev
+
+
+plot(bb_upper, title="BB Upper", color=color.rgb(255, 255, 255), linewidth=1, display = display.pane)
+plot(bb_lower, title="BB Lower", color=color.rgb(255, 255, 255), linewidth=1, display = display.pane)
+plot(bb_basis, title="BB Basis", color=color.rgb(0, 0, 0), linewidth=1, display = display.pane)

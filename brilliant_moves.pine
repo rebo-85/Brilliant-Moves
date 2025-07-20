@@ -1,5 +1,5 @@
 //@version=6
-indicator("Brilliant Moves v.1.1 [ReBo]", overlay=true)
+indicator("Brilliant Moves v.1.3.1 [ReBo]", overlay=true)
 //===============================================================================
 // Internal Data
 //===============================================================================
@@ -39,37 +39,48 @@ method get_source(string type) =>
         "Volume" => volume
         => close 
     
-get_tf_trend(tf, len) =>
+method get_tf_trend(string tf, int len) =>
     var open_ = request.security(syminfo.tickerid, tf, open[len - 1], lookahead=barmerge.lookahead_off)
     var close_ = request.security(syminfo.tickerid, tf, close, lookahead=barmerge.lookahead_off)
     int trend = close_ > open_ ? 1 : close_ < open_ ? -1 : 0
     trend
 
+
 // --- Types ---
 // --- Variables ---
-string gen_group    = 'General'
-string db_group     = 'Dashboard'
-string bb_group    = 'Bollinger Bands'
+string gen_group    = '========================================================== '
+string db_group     = '==========================================================  '
+string bb_group     = '==========================================================   '
+string ema_group    = '==========================================================    '
 
 //===============================================================================
 // Processes
 //===============================================================================
 
-// --- General ---
-// Inputs
-int macd_fast_len   = input.int(defval = 12, title="MACD Fast Length", minval = 1, group = gen_group, display = display.none)
-int macd_slow_len   = input.int(defval = 26, title="MACD Slow Length", minval = 1, group = gen_group, display = display.none)
-int macd_smoothing  = input.int(defval = 9, title="MACD Signal Smoothing", minval = 1, group = gen_group, display = display.none)
-int voli_len        = input.int(defval = 10, title="Volatility Lookback", minval = 1, group = gen_group, display = display.none)
-int atr_smoothing   = input.int(defval = 20, title="Volatility Smoothing", minval = 1, group = gen_group, display = display.none)
-string rsi_src_type = input.string(defval = "Close", title = "RSI Source", options = ["Close", "Open", "High", "Low", "HL2", "HLC3", "OHLC4", "Volume"], group = gen_group, display = display.none)
-int rsi_len         = input.int(defval = 14, title="RSI Length", minval = 1, group = gen_group, display = display.none)
-int dmi_smoothing   = input.int(defval = 14, title="DMI Smoothing Period", minval = 1, group = gen_group, display = display.none)
-int di_len          = input.int(defval = 14, title="DMI DI Period", minval = 1, group = gen_group, display = display.none)
-int dvol_len        = input.int(defval = 50, title="Delta Volume Period", minval = 1, group = gen_group, display = display.none)
+// --- General ---      
+// Inputs                                                                                     
+string macd_header  = input.string(defval = '', title = "MACD                                                                                     ", inline = 'macd', group = gen_group, display = display.none)
+int macd_fast_len   = input.int(defval = 12, title = "      Fast Period", minval = 1, group = gen_group, display = display.none)
+int macd_slow_len   = input.int(defval = 26, title = "      Slow Period", minval = 1, group = gen_group, display = display.none)
+int macd_len        = input.int(defval = 9, title = "      Signal Period", minval = 1, group = gen_group, display = display.none)
 
-// Volatility
-float voli_atr = 3 * ta.atr(voli_len)
+string voli_header  = input.string(defval = '', title = "VOLATILITY INDEX                                                                                     ", inline = 'voli', group = gen_group, display = display.none)
+int atr_len         = input.int(defval = 10, title = "      ATR Period", minval = 1, group = gen_group, display = display.none)
+int atr_smoothing   = input.int(defval = 20, title = "      Smoothing Period", minval = 1, group = gen_group, display = display.none)
+
+string rsi_header  = input.string(defval = '', title = "RSI                                                                                     ", inline = 'rsi', group = gen_group, display = display.none)
+string rsi_src_type = input.string(defval = "Close", title = "      Source", options = ["Close", "Open", "High", "Low", "HL2", "HLC3", "OHLC4", "Volume"], group = gen_group, display = display.none)
+int rsi_len         = input.int(defval = 14, title = "      Period", minval = 1, group = gen_group, display = display.none)
+
+string dmi_header  = input.string(defval = '', title = "DMI                                                                                     ", inline = 'dmi', group = gen_group, display = display.none)
+int dmi_smoothing   = input.int(defval = 14, title = "      Smoothing Period", minval = 1, group = gen_group, display = display.none)
+int di_len          = input.int(defval = 14, title = "      DI Period", minval = 1, group = gen_group, display = display.none)
+
+string dvol_header  = input.string(defval = '', title = "DELTA VOLUME                                                                                     ", inline = 'dvol', group = gen_group, display = display.none)
+int dvol_len        = input.int(defval = 50, title = "      Period", minval = 1, group = gen_group, display = display.none)
+
+// // Volatility
+float voli_atr = 3 * ta.atr(atr_len)
 float voli_sma_atr = ta.sma(voli_atr, atr_smoothing)
 float voli_std_atr = 2 * ta.stdev(voli_atr, atr_smoothing)
 
@@ -87,7 +98,7 @@ float rsi_src = get_source(rsi_src_type)
 float rsi = ta.rsi(rsi_src, rsi_len)
 
 // MACD
-[macd_line, macd_signal, macd_histogram] = ta.macd(close, macd_fast_len, macd_slow_len, macd_smoothing)
+[macd_line, macd_signal, macd_histogram] = ta.macd(close, macd_fast_len, macd_slow_len, macd_len)
 
 // DMI
 [di_plus, di_minus, adx] = ta.dmi(di_len, dmi_smoothing)
@@ -99,12 +110,12 @@ float db_dvol_max = math.max(math.abs(ta.highest(db_dvol, dvol_len)), math.abs(t
 float db_dvol_normalized = db_dvol_max != 0 ? db_dvol / db_dvol_max : 0
 
 // === Dashboard ===
-bool db_show            = input.bool(defval = true, title = 'Enable', group = db_group)
-string db_loc           = input.string(defval = "Bottom Right", title = "Dashboard Location", options = ["Top Right", "Bottom Right", "Bottom Left", "Middle Left"], group = db_group, display = display.none)
-string db_size          = input.string(defval = "Small", title = "Dashboard Size", options = ["Tiny", "Small", "Normal", "Large"], group = db_group, display = display.none)
-bool db_show_tf         = input.bool(defval = true, title = 'Timeframe Trends', group = db_group)
-string db_tf_dis_type   = input.string(defval = "▲/▼", title = "Trend Display Type", options = ["▲/▼", "↑/↓", "UP/DOWN","Bullish/Bearish"], group = db_group, display = display.none)
-int db_tf_length        = input.int(defval = 3, title="Timeframe Lookback", minval = 1, group = db_group, display = display.none)
+bool db_show            = input.bool(defval = true, title = 'DASHBOARD', group = db_group)
+string db_loc           = input.string(defval = "Bottom Right", title = "      Location", options = ["Top Right", "Bottom Right", "Bottom Left", "Middle Left"], group = db_group, display = display.none)
+string db_size          = input.string(defval = "Small", title = "      Size", options = ["Tiny", "Small", "Normal", "Large"], group = db_group, display = display.none)
+bool db_show_tf         = input.bool(defval = true, title = '--Timeframe Trends', group = db_group)
+string db_tf_dis_type   = input.string(defval = "▲/▼", title = "      Display Type", options = ["▲/▼", "↑/↓", "UP/DOWN","Bullish/Bearish"], group = db_group, display = display.none)
+int db_tf_length        = input.int(defval = 3, title="      Lookback Period", minval = 1, group = db_group, display = display.none)
 
 
 method get_tf_trend_text(string tf) =>
@@ -202,13 +213,16 @@ if db_show
 
 
 // === Bolinger Bands ===
-bool bb_show            = input.bool(defval = true, title = 'Enable', group = bb_group, display = display.none)
-int bb_length           = input.int(defval = 20, title="Length", group = bb_group, display = display.none)
-float bb_mult           = input.float(defval = 2.0, title="Multiplier", group = bb_group, display = display.none)
-color bb_upper_color    = input.color(defval = color.red, title="BB Upper", group = bb_group)
-color bb_lower_color    = input.color(defval = color.green, title="BB Lower", group = bb_group)
-color bb_basis_color    = input.color(defval = color.yellow, title="BB Basis", group = bb_group)
-
+bool bb_show            = input.bool(defval = true, title = 'BOLINGER BANDS', group = bb_group, display = display.none)
+int bb_length           = input.int(defval = 20, title="      Length", group = bb_group, display = display.none)
+float bb_mult           = input.float(defval = 2.0, title="      Multiplier", group = bb_group, display = display.none)
+color bb_upper_color    = input.color(defval = color.red, title="      Upper Band Color  ", inline = 'bb_upper', group = bb_group)
+color bb_upper_gradient = input.color(defval = #000000, title=" Gradient  ", inline = 'bb_upper', group = bb_group)
+color bb_lower_color    = input.color(defval = color.green, title="      Lower Band Color  ", inline = 'bb_lower', group = bb_group)
+color bb_lower_gradient = input.color(defval = #000000, title=" Gradient  ", inline = 'bb_lower', group = bb_group)
+color bb_basis_color    = input.color(defval = color.yellow, title="      Basis Color", group = bb_group)
+float bb_opacity        = input.float(defval = 100, title="      Opacity", minval = 0, maxval = 100, group = bb_group, display = display.none)
+string bb_style         = input.string(defval = "1", title = "      Style", options = ["1", "2", "3", "4"], group = bb_group, display = display.none)
 
 float bb_upper = na
 float bb_lower = na
@@ -216,6 +230,10 @@ float bb_basis = na
 float bb_upper_min = na
 float bb_lower_min = na
 float bb_basis_min = na
+float bb_upper_max = na
+float bb_lower_max = na
+float bb_basis_max = na
+float bb_transparency = 100 - bb_opacity
 
 if bb_show
     bb_basis := ta.sma(close, bb_length)
@@ -228,12 +246,59 @@ if bb_show
     bb_upper_min := bb_basis_min + bb_dev_min
     bb_lower_min := bb_basis_min - bb_dev_min
 
-var bb_upper_plot = plot(bb_upper, title="BB Upper", color=bb_upper_color, linewidth=2, editable = false, display = display.pane)
-var bb_lower_plot = plot(bb_lower, title="BB Lower", color=bb_lower_color, linewidth=2, editable = false, display = display.pane)
-var bb_basis_plot = plot(bb_basis, title="BB Basis", color=bb_basis_color, linewidth=2, editable = false, display = display.pane)
+    bb_basis_max := ta.sma(close, int(bb_length / 0.75))
+    bb_dev_max = (bb_mult / 0.75) * ta.stdev(close, int(bb_length / 0.75))
+    bb_upper_max := bb_basis_max + bb_dev_max
+    bb_lower_max := bb_basis_max - bb_dev_max
+
+var bb_upper_plot = plot(bb_upper, title="BB Upper", color=color.new(bb_upper_color, bb_transparency), linewidth=2, editable = false, display = display.pane)
+var bb_basis_plot = plot(bb_basis, title="BB Basis", color=color.new(bb_basis_color, bb_transparency), linewidth=2, editable = false, display = display.pane)
+var bb_lower_plot = plot(bb_lower, title="BB Lower", color=color.new(bb_lower_color, bb_transparency), linewidth=2, editable = false, display = display.pane)
 
 var bb_upper_min_plot = plot(bb_upper_min, editable = false, display = display.none)
 var bb_lower_min_plot = plot(bb_lower_min, editable = false, display = display.none)
 
-fill(bb_upper_plot, bb_upper_min_plot, bb_upper, bb_upper_min, color.new(bb_upper_color, 0), #00000000, title = "", editable=false)
-fill(bb_lower_plot, bb_lower_min_plot, bb_lower, bb_lower_min, color.new(bb_lower_color, 0), #00000000, title = "", editable=false)
+var bb_upper_max_plot = plot(bb_upper_max, editable = false, display = display.none)
+var bb_lower_max_plot = plot(bb_lower_max, editable = false, display = display.none)
+
+fill(bb_upper_plot, bb_upper_min_plot, bb_upper, bb_upper_min, color.new(bb_upper_color, bb_transparency), color.new(bb_upper_gradient, 100), editable=false, display = bb_style == '2' or bb_style == '4' ? display.all : display.none)
+fill(bb_lower_plot, bb_lower_min_plot, bb_lower, bb_lower_min, color.new(bb_lower_color, bb_transparency), color.new(bb_lower_gradient, 100), editable=false, display = bb_style == '2' or bb_style == '4' ? display.all : display.none)
+
+fill(bb_upper_plot, bb_upper_max_plot, bb_upper, bb_upper_max, color.new(bb_upper_color, bb_transparency), color.new(bb_upper_gradient, 100), editable=false, display = bb_style == '3' or bb_style == '4' ? display.all : display.none)
+fill(bb_lower_plot, bb_lower_max_plot, bb_lower, bb_lower_max, color.new(bb_lower_color, bb_transparency), color.new(bb_lower_gradient, 100), editable=false, display = bb_style == '3' or bb_style == '4' ? display.all : display.none)
+
+// === Exponential Moving Average ===
+bool ema_show           = input.bool(defval = false, title = 'EMA', group = ema_group)
+int ema_len             = input.int(defval = 200, title="      Length", group = ema_group, display = display.none)
+int ema_range           = input.int(defval = 50, title="      Range", group = ema_group, display = display.none)
+color ema_up_color      = input.color(defval = color.green, title="      Up Trend Color", group = ema_group)
+color ema_down_color    = input.color(defval = color.red, title="      Down Trend Color", group = ema_group)
+string ema_style        = input.string(defval = "1", title = "      Style", options = ["1", "2"], group = ema_group, display = display.none)
+
+float ema_upper = na
+float ema_lower = na
+float ema_basis = na
+color ema_trend_color = na
+int ema_fill_alpha_upper = na
+int ema_fill_alpha_lower = na
+
+if ema_show
+    ema_upper := ta.ema(close, ema_len + math.min(ema_len, ema_range))
+    ema_lower := ta.ema(close, ema_len - math.min(ema_len, ema_range))
+    ema_basis := ta.ema(close, ema_len)
+
+    ema_trend_color := ema_basis > ema_basis[1] ? ema_up_color : ema_down_color
+
+    float dist_upper = math.abs(ema_upper - ema_basis)
+    float dist_lower = math.abs(ema_lower - ema_basis)
+    float max_dist = math.max(dist_upper, dist_lower)
+    ema_fill_alpha_upper := int(255 * (dist_upper / (max_dist == 0 ? 1 : max_dist)))
+    ema_fill_alpha_lower := int(255 * (dist_lower / (max_dist == 0 ? 1 : max_dist)))
+
+var ema_upper_plot = plot(ema_upper, editable = false, display = display.none)
+var ema_lower_plot = plot(ema_lower, editable = false, display = display.none)
+var ema_basis_plot = plot(ema_basis, editable = false, display = display.none)
+
+fill(ema_upper_plot, ema_lower_plot, ema_upper, ema_lower, color.new(ema_trend_color, 255 - math.max(ema_fill_alpha_upper, ema_fill_alpha_lower)), color.new(ema_trend_color, 100), editable = false, display = ema_style == '1' ? display.all : display.none )
+fill(ema_upper_plot, ema_basis_plot, ema_upper, ema_basis, color.new(ema_trend_color, 255 - ema_fill_alpha_upper), color.new(ema_trend_color, 100), editable=false, display = ema_style == '2' ? display.all : display.none)
+fill(ema_lower_plot, ema_basis_plot, ema_lower, ema_basis, color.new(ema_trend_color, 255 - ema_fill_alpha_lower), color.new(ema_trend_color, 100), editable=false, display = ema_style == '2' ? display.all : display.none)

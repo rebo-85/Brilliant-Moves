@@ -1,5 +1,5 @@
 //@version=6
-indicator("Brilliant Moves v.1.3.1 [ReBo]", overlay=true)
+indicator("Brilliant Moves v.1.3.3 [ReBo]", overlay=true)
 //===============================================================================
 // Internal Data
 //===============================================================================
@@ -113,6 +113,7 @@ float db_dvol_normalized = db_dvol_max != 0 ? db_dvol / db_dvol_max : 0
 bool db_show            = input.bool(defval = true, title = 'DASHBOARD', group = db_group)
 string db_loc           = input.string(defval = "Bottom Right", title = "      Location", options = ["Top Right", "Bottom Right", "Bottom Left", "Middle Left"], group = db_group, display = display.none)
 string db_size          = input.string(defval = "Small", title = "      Size", options = ["Tiny", "Small", "Normal", "Large"], group = db_group, display = display.none)
+bool db_show_tech         = input.bool(defval = true, title = '--Technicals', group = db_group)
 bool db_show_tf         = input.bool(defval = true, title = '--Timeframe Trends', group = db_group)
 string db_tf_dis_type   = input.string(defval = "▲/▼", title = "      Display Type", options = ["▲/▼", "↑/↓", "UP/DOWN","Bullish/Bearish"], group = db_group, display = display.none)
 int db_tf_length        = input.int(defval = 3, title="      Lookback Period", minval = 1, group = db_group, display = display.none)
@@ -129,6 +130,16 @@ method get_tf_trend_text(string tf) =>
 method plot_cell(table _table, int col, int row, string data, color text_color = #FFFFFF, string text_align = text.align_center, color bg_color = na) => 
     _table.cell(col,row,data,text_color = text_color, text_size = get_size(db_size), text_halign = text_align, bgcolor = bg_color)
 
+method get_table_len(bool field1, bool field2) =>
+    if field1
+        if field2
+            5
+        else
+            1
+    else if field2
+        1
+    else
+        0
 if db_show
     if barstate.islast
         string db_table_size = get_size(db_size)
@@ -143,27 +154,34 @@ if db_show
         color dmi_color = adx > 25 and di_plus > di_minus ? color.green : adx > 25 and di_minus > di_plus ? color.red : adx > 20 ? color.orange : color.yellow
 
         // Dashboard title
+        int table_len = get_table_len(db_show_tech, db_show_tf)
         _table.plot_cell(0, 0, 'Dashboard', bg_color = #18233a)
-        _table.merge_cells(0, 0, db_show_tf ? 5 : 1, 0)
+        _table.merge_cells(0, 0, table_len > 0 ? table_len : 1, 0)
+
+        if table_len == 0
+            _table.plot_cell(0, 1, 'No Data')
 
         // // Technicals
-        _table.plot_cell(0, 1, 'Technicals', text_color = #b0b2b9)
-        _table.merge_cells(0, 1, 1, 1)
+        if db_show_tech
+            int pivot_col = 0
+            int pivot_row = 1
+            _table.plot_cell(pivot_col, 1, 'Technicals', text_color = #b0b2b9)
+            _table.merge_cells(pivot_col, pivot_row, pivot_col + 1, pivot_row)
 
-        _table.plot_cell(0, 2, 'Volatility Index', text_align = text.align_left)
-        _table.plot_cell(1, 2, str.tostring(voli_index,"#.##"), text_color = volatility_color)
+            _table.plot_cell(pivot_col, 2, 'Volatility Index', text_align = text.align_left)
+            _table.plot_cell(pivot_col + 1, pivot_row + 1, str.tostring(voli_index,"#.##"), text_color = volatility_color)
 
-        _table.plot_cell(0, 3, 'RSI', text_align = text.align_left)
-        _table.plot_cell(1, 3,  str.tostring(rsi,"#.##"), text_color = rsi_color)
+            _table.plot_cell(pivot_col, 3, 'RSI', text_align = text.align_left)
+            _table.plot_cell(pivot_col + 1, pivot_row + 2,  str.tostring(rsi,"#.##"), text_color = rsi_color)
 
-        _table.plot_cell(0, 4, 'MACD Histogram', text_align = text.align_left)
-        _table.plot_cell(1, 4,  str.tostring(macd_histogram,"#.##"), text_color = histogram_color)
+            _table.plot_cell(pivot_col, 4, 'MACD Histogram', text_align = text.align_left)
+            _table.plot_cell(pivot_col + 1, pivot_row + 3,  str.tostring(macd_histogram,"#.##"), text_color = histogram_color)
 
-        _table.plot_cell(0, 5, 'DMI', text_align = text.align_left)
-        _table.plot_cell(1, 5,  str.tostring(adx,"#.##"), text_color = dmi_color)
+            _table.plot_cell(pivot_col, 5, 'DMI', text_align = text.align_left)
+            _table.plot_cell(pivot_col + 1, pivot_row + 4,  str.tostring(adx,"#.##"), text_color = dmi_color)
 
-        _table.plot_cell(0, 6, 'Delta Volume', text_align = text.align_left)
-        _table.plot_cell(1, 6,  str.tostring(db_dvol_normalized,"#.##"), text_color = dvol_color)
+            _table.plot_cell(pivot_col, 6, 'Delta Volume', text_align = text.align_left)
+            _table.plot_cell(pivot_col + 1, pivot_row + 5,  str.tostring(db_dvol_normalized,"#.##"), text_color = dvol_color)
 
         // // Timeframe Trends
         if db_show_tf
@@ -177,39 +195,42 @@ if db_show
             [h4_text, h4_color]   = get_tf_trend_text("240")
             [h12_text, h12_color] = get_tf_trend_text("720")
             [d1_text, d1_color]   = get_tf_trend_text("D")
+            
+            int pivot_col = db_show_tech ? 4 : 0
+            int pivot_row = 1
 
-            _table.plot_cell(4, 1, 'Timeframe', text_color = #b0b2b9)
-            _table.plot_cell(5, 1, 'Trend', text_color = #b0b2b9)
+            _table.plot_cell(pivot_col, pivot_row, 'Timeframe', text_color = #b0b2b9)
+            _table.plot_cell(pivot_col + 1, pivot_row, 'Trend', text_color = #b0b2b9)
 
-            _table.plot_cell(4, 2, "1 Minute")
-            _table.plot_cell(5, 2, m1_text, text_color = m1_color)
+            _table.plot_cell(pivot_col, 2, "1 Minute")
+            _table.plot_cell(pivot_col + 1, pivot_row + 1, m1_text, text_color = m1_color)
 
-            _table.plot_cell(4, 3, "3 Minute")
-            _table.plot_cell(5, 3, m3_text, text_color = m3_color)
+            _table.plot_cell(pivot_col, 3, "3 Minute")
+            _table.plot_cell(pivot_col + 1, pivot_row + 2, m3_text, text_color = m3_color)
 
-            _table.plot_cell(4, 4, "5 Minute")
-            _table.plot_cell(5, 4, m5_text, text_color = m5_color)
+            _table.plot_cell(pivot_col, 4, "5 Minute")
+            _table.plot_cell(pivot_col + 1, pivot_row + 3, m5_text, text_color = m5_color)
 
-            _table.plot_cell(4, 5, "15 Minute")
-            _table.plot_cell(5, 5, m15_text, text_color = m15_color)
+            _table.plot_cell(pivot_col, 5, "15 Minute")
+            _table.plot_cell(pivot_col + 1, pivot_row + 4, m15_text, text_color = m15_color)
 
-            _table.plot_cell(4, 6, "30 Minute")
-            _table.plot_cell(5, 6, m30_text, text_color = m30_color)
+            _table.plot_cell(pivot_col, 6, "30 Minute")
+            _table.plot_cell(pivot_col + 1, pivot_row + 5, m30_text, text_color = m30_color)
 
-            _table.plot_cell(4, 7, "1 Hour")
-            _table.plot_cell(5, 7, h1_text, text_color = h1_color)
+            _table.plot_cell(pivot_col, 7, "1 Hour")
+            _table.plot_cell(pivot_col + 1, pivot_row + 6, h1_text, text_color = h1_color)
 
-            _table.plot_cell(4, 8, "2 Hour")
-            _table.plot_cell(5, 8, h2_text, text_color = h2_color)
+            _table.plot_cell(pivot_col, 8, "2 Hour")
+            _table.plot_cell(pivot_col + 1, pivot_row + 7, h2_text, text_color = h2_color)
 
-            _table.plot_cell(4, 9, "4 Hour")
-            _table.plot_cell(5, 9, h4_text, text_color = h4_color)
+            _table.plot_cell(pivot_col, 9, "4 Hour")
+            _table.plot_cell(pivot_col + 1, pivot_row + 8, h4_text, text_color = h4_color)
 
-            _table.plot_cell(4, 10, "12 Hour")
-            _table.plot_cell(5, 10, h12_text, text_color = h12_color)
+            _table.plot_cell(pivot_col, 10, "12 Hour")
+            _table.plot_cell(pivot_col + 1, pivot_row + 9, h12_text, text_color = h12_color)
 
-            _table.plot_cell(4, 11, "Daily")
-            _table.plot_cell(5, 11, d1_text, text_color = d1_color)
+            _table.plot_cell(pivot_col, 11, "Daily")
+            _table.plot_cell(pivot_col + 1, pivot_row + 10, d1_text, text_color = d1_color)
 
 
 // === Bolinger Bands ===
@@ -222,7 +243,7 @@ color bb_lower_color    = input.color(defval = color.green, title="    �
 color bb_lower_gradient = input.color(defval = #000000, title=" Gradient  ", inline = 'bb_lower', group = bb_group)
 color bb_basis_color    = input.color(defval = color.yellow, title="      Basis Color", group = bb_group)
 float bb_opacity        = input.float(defval = 100, title="      Opacity", minval = 0, maxval = 100, group = bb_group, display = display.none)
-string bb_style         = input.string(defval = "1", title = "      Style", options = ["1", "2", "3", "4"], group = bb_group, display = display.none)
+string bb_style         = input.string(defval = "2", title = "      Style", options = ["1", "2", "3", "4"], group = bb_group, display = display.none)
 
 float bb_upper = na
 float bb_lower = na
@@ -271,8 +292,8 @@ fill(bb_lower_plot, bb_lower_max_plot, bb_lower, bb_lower_max, color.new(bb_lowe
 bool ema_show           = input.bool(defval = false, title = 'EMA', group = ema_group)
 int ema_len             = input.int(defval = 200, title="      Length", group = ema_group, display = display.none)
 int ema_range           = input.int(defval = 50, title="      Range", group = ema_group, display = display.none)
-color ema_up_color      = input.color(defval = color.green, title="      Up Trend Color", group = ema_group)
-color ema_down_color    = input.color(defval = color.red, title="      Down Trend Color", group = ema_group)
+color ema_up_color      = input.color(defval = color.blue, title="      Up Trend Color", group = ema_group)
+color ema_down_color    = input.color(defval = color.orange, title="      Down Trend Color", group = ema_group)
 string ema_style        = input.string(defval = "1", title = "      Style", options = ["1", "2"], group = ema_group, display = display.none)
 
 float ema_upper = na
@@ -287,7 +308,7 @@ if ema_show
     ema_lower := ta.ema(close, ema_len - math.min(ema_len, ema_range))
     ema_basis := ta.ema(close, ema_len)
 
-    ema_trend_color := ema_basis > ema_basis[1] ? ema_up_color : ema_down_color
+    ema_trend_color := ema_lower > ema_upper ? ema_up_color : ema_down_color
 
     float dist_upper = math.abs(ema_upper - ema_basis)
     float dist_lower = math.abs(ema_lower - ema_basis)

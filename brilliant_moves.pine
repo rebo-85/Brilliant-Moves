@@ -1,5 +1,5 @@
 //@version=6
-indicator("Brilliant Moves v.1.4.0 [ReBo]", overlay=true)
+indicator("Brilliant Moves v.1.4.1 [ReBo]", overlay=true)
 //===============================================================================
 // Internal Data
 //===============================================================================
@@ -118,10 +118,6 @@ bool db_show_tf         = input.bool(defval = true, title = '--Timeframe Trends'
 string db_tf_dis_type   = input.string(defval = "▲/▼", title = "      Display Type", options = ["▲/▼", "↑/↓", "UP/DOWN","Bullish/Bearish"], group = db_group, display = display.none)
 int db_tf_length        = input.int(defval = 3, title="      Lookback Period", minval = 1, group = db_group, display = display.none)
 bool db_show_sess       = input.bool(defval = true, title = '--Sessions', group = db_group)
-db_tokyo_sess           = input.session(defval="0000-0900", title='      Tokyo', group=db_group, display = display.none)
-db_london_sess          = input.session(defval="0700-1600", title='      London', group=db_group, display = display.none)
-db_newyork_sess         = input.session(defval="1300-2200", title='      New York', group=db_group, display = display.none)
-db_sydney_sess          = input.session(defval="2100-0600", title='      Sydney', group=db_group, display = display.none)
 
 
 method get_tf_trend_text(string tf) =>
@@ -241,15 +237,15 @@ if db_show
         
         // // Sessions
         if db_show_sess
-            string tokyo_time_range = db_tokyo_sess + ':123456'
-            string london_time_range = db_london_sess + ':123456'
-            string newyork_time_range = db_newyork_sess + ':123456'
-            string sydney_time_range = db_sydney_sess + ':123456'
+            string tokyo_session = '0000-0900:123456'
+            string london_session = '0700-1600:123456'
+            string newyork_session = '1300-2200:123456'
+            string sydney_session = '2100-0600:123456'
 
-            [tokyo_status, tokyo_color] = get_session_info(tokyo_time_range)
-            [london_status, london_color] = get_session_info(london_time_range)
-            [newyork_status, newyork_color] = get_session_info(newyork_time_range)
-            [sydney_status, sydney_color] = get_session_info(sydney_time_range)
+            [tokyo_status, tokyo_color] = get_session_info(tokyo_session)
+            [london_status, london_color] = get_session_info(london_session)
+            [newyork_status, newyork_color] = get_session_info(newyork_session)
+            [sydney_status, sydney_color] = get_session_info(sydney_session)
 
             int pivot_col = db_show_tech ? db_show_tf ? 6 : 3 : db_show_tf ? 3 : 0
             int pivot_row = 1

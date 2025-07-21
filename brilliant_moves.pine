@@ -1,5 +1,5 @@
 //@version=6
-indicator("Brilliant Moves v.1.3.3 [ReBo]", overlay=true)
+indicator("Brilliant Moves v.1.4.0 [ReBo]", overlay=true)
 //===============================================================================
 // Internal Data
 //===============================================================================
@@ -113,10 +113,15 @@ float db_dvol_normalized = db_dvol_max != 0 ? db_dvol / db_dvol_max : 0
 bool db_show            = input.bool(defval = true, title = 'DASHBOARD', group = db_group)
 string db_loc           = input.string(defval = "Bottom Right", title = "      Location", options = ["Top Right", "Bottom Right", "Bottom Left", "Middle Left"], group = db_group, display = display.none)
 string db_size          = input.string(defval = "Small", title = "      Size", options = ["Tiny", "Small", "Normal", "Large"], group = db_group, display = display.none)
-bool db_show_tech         = input.bool(defval = true, title = '--Technicals', group = db_group)
+bool db_show_tech       = input.bool(defval = true, title = '--Technicals', group = db_group)
 bool db_show_tf         = input.bool(defval = true, title = '--Timeframe Trends', group = db_group)
 string db_tf_dis_type   = input.string(defval = "▲/▼", title = "      Display Type", options = ["▲/▼", "↑/↓", "UP/DOWN","Bullish/Bearish"], group = db_group, display = display.none)
 int db_tf_length        = input.int(defval = 3, title="      Lookback Period", minval = 1, group = db_group, display = display.none)
+bool db_show_sess       = input.bool(defval = true, title = '--Sessions', group = db_group)
+db_tokyo_sess           = input.session(defval="0000-0900", title='      Tokyo', group=db_group, display = display.none)
+db_london_sess          = input.session(defval="0700-1600", title='      London', group=db_group, display = display.none)
+db_newyork_sess         = input.session(defval="1300-2200", title='      New York', group=db_group, display = display.none)
+db_sydney_sess          = input.session(defval="2100-0600", title='      Sydney', group=db_group, display = display.none)
 
 
 method get_tf_trend_text(string tf) =>
@@ -130,20 +135,21 @@ method get_tf_trend_text(string tf) =>
 method plot_cell(table _table, int col, int row, string data, color text_color = #FFFFFF, string text_align = text.align_center, color bg_color = na) => 
     _table.cell(col,row,data,text_color = text_color, text_size = get_size(db_size), text_halign = text_align, bgcolor = bg_color)
 
-method get_table_len(bool field1, bool field2) =>
-    if field1
-        if field2
-            5
-        else
-            1
-    else if field2
-        1
+method get_table_len(bool field1, bool field2, bool field3) =>
+    int active_count = (field1 ? 1 : 0) + (field2 ? 1 : 0) + (field3 ? 1 : 0)
+    active_count == 1 ? 1 : active_count == 2 ? 4 : active_count == 3 ? 7 : 0
+        
+method get_session_info(string session_time) =>
+    bool in_session = not na(time(timeframe.period, session_time, "UTC")) and timeframe.isintraday
+    if in_session
+        ['Active', color.green]
     else
-        0
+        ['Inactive', color.red]
+        
 if db_show
     if barstate.islast
         string db_table_size = get_size(db_size)
-        table _table = table.new(get_position(db_loc), 18, 20 , bgcolor = #11172565 , border_color = #373a4600 , border_width = 1 , frame_color = #000000 , frame_width = 1)
+        table _table = table.new(get_position(db_loc), 20, 20 , bgcolor = #11172565 , border_color = #373a4600 , border_width = 1 , frame_color = #000000 , frame_width = 1)
         
         float hist_diff = macd_histogram - macd_histogram[1]
 
@@ -154,11 +160,12 @@ if db_show
         color dmi_color = adx > 25 and di_plus > di_minus ? color.green : adx > 25 and di_minus > di_plus ? color.red : adx > 20 ? color.orange : color.yellow
 
         // Dashboard title
-        int table_len = get_table_len(db_show_tech, db_show_tf)
+        int table_len = get_table_len(db_show_tech, db_show_tf, db_show_sess)
         _table.plot_cell(0, 0, 'Dashboard', bg_color = #18233a)
-        _table.merge_cells(0, 0, table_len > 0 ? table_len : 1, 0)
 
-        if table_len == 0
+        if table_len > 0
+            _table.merge_cells(0, 0, table_len, 0)
+        else
             _table.plot_cell(0, 1, 'No Data')
 
         // // Technicals
@@ -168,19 +175,19 @@ if db_show
             _table.plot_cell(pivot_col, 1, 'Technicals', text_color = #b0b2b9)
             _table.merge_cells(pivot_col, pivot_row, pivot_col + 1, pivot_row)
 
-            _table.plot_cell(pivot_col, 2, 'Volatility Index', text_align = text.align_left)
+            _table.plot_cell(pivot_col, pivot_row + 1, 'Volatility Index', text_align = text.align_left)
             _table.plot_cell(pivot_col + 1, pivot_row + 1, str.tostring(voli_index,"#.##"), text_color = volatility_color)
 
-            _table.plot_cell(pivot_col, 3, 'RSI', text_align = text.align_left)
+            _table.plot_cell(pivot_col, pivot_row + 2, 'RSI', text_align = text.align_left)
             _table.plot_cell(pivot_col + 1, pivot_row + 2,  str.tostring(rsi,"#.##"), text_color = rsi_color)
 
-            _table.plot_cell(pivot_col, 4, 'MACD Histogram', text_align = text.align_left)
+            _table.plot_cell(pivot_col, pivot_row + 3, 'MACD Histogram', text_align = text.align_left)
             _table.plot_cell(pivot_col + 1, pivot_row + 3,  str.tostring(macd_histogram,"#.##"), text_color = histogram_color)
 
-            _table.plot_cell(pivot_col, 5, 'DMI', text_align = text.align_left)
+            _table.plot_cell(pivot_col, pivot_row + 4, 'DMI', text_align = text.align_left)
             _table.plot_cell(pivot_col + 1, pivot_row + 4,  str.tostring(adx,"#.##"), text_color = dmi_color)
 
-            _table.plot_cell(pivot_col, 6, 'Delta Volume', text_align = text.align_left)
+            _table.plot_cell(pivot_col, pivot_row + 5, 'Delta Volume', text_align = text.align_left)
             _table.plot_cell(pivot_col + 1, pivot_row + 5,  str.tostring(db_dvol_normalized,"#.##"), text_color = dvol_color)
 
         // // Timeframe Trends
@@ -196,7 +203,7 @@ if db_show
             [h12_text, h12_color] = get_tf_trend_text("720")
             [d1_text, d1_color]   = get_tf_trend_text("D")
             
-            int pivot_col = db_show_tech ? 4 : 0
+            int pivot_col = db_show_tech ? 3 : 0
             int pivot_row = 1
 
             _table.plot_cell(pivot_col, pivot_row, 'Timeframe', text_color = #b0b2b9)
@@ -231,6 +238,36 @@ if db_show
 
             _table.plot_cell(pivot_col, 11, "Daily")
             _table.plot_cell(pivot_col + 1, pivot_row + 10, d1_text, text_color = d1_color)
+        
+        // // Sessions
+        if db_show_sess
+            string tokyo_time_range = db_tokyo_sess + ':123456'
+            string london_time_range = db_london_sess + ':123456'
+            string newyork_time_range = db_newyork_sess + ':123456'
+            string sydney_time_range = db_sydney_sess + ':123456'
+
+            [tokyo_status, tokyo_color] = get_session_info(tokyo_time_range)
+            [london_status, london_color] = get_session_info(london_time_range)
+            [newyork_status, newyork_color] = get_session_info(newyork_time_range)
+            [sydney_status, sydney_color] = get_session_info(sydney_time_range)
+
+            int pivot_col = db_show_tech ? db_show_tf ? 6 : 3 : db_show_tf ? 3 : 0
+            int pivot_row = 1
+            _table.plot_cell(pivot_col, pivot_row, 'Session', text_color = #b0b2b9)
+            _table.plot_cell(pivot_col + 1, pivot_row, 'Status', text_color = #b0b2b9)
+
+            _table.plot_cell(pivot_col, pivot_row + 1, 'Tokyo', text_align = text.align_left)
+            _table.plot_cell(pivot_col + 1, pivot_row + 1, tokyo_status, text_color = tokyo_color)
+
+            _table.plot_cell(pivot_col, pivot_row + 2, 'London', text_align = text.align_left)
+            _table.plot_cell(pivot_col + 1, pivot_row + 2, london_status, text_color = london_color)
+
+            _table.plot_cell(pivot_col, pivot_row + 3, 'New York', text_align = text.align_left)
+            _table.plot_cell(pivot_col + 1, pivot_row + 3, newyork_status, text_color = newyork_color)
+
+            _table.plot_cell(pivot_col, pivot_row + 4, 'Sydney', text_align = text.align_left)
+            _table.plot_cell(pivot_col + 1, pivot_row + 4, sydney_status, text_color = sydney_color)
+
 
 
 // === Bolinger Bands ===
